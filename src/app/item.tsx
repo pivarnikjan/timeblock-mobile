@@ -1,20 +1,25 @@
-import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Linking, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { Linking, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import type { CalendarItem } from '@timeblock/core/calendar/assemble';
 import { parseView } from '@timeblock/core/calendar/views';
 import { deleteBlock, moveBlockTo, tick, unpinBlock } from '@timeblock/core/operations/plan';
-import { deleteGoogleEvent } from '@timeblock/core/operations/vacation';
+import { vacationConflicts, type Conflict, type ConflictTarget } from '@timeblock/core/calendar/vacation-conflicts';
+import { deleteDuringVacation, deleteGoogleEvent, removeVacation } from '@timeblock/core/operations/vacation';
+import { getSettings } from '@timeblock/core/store/settings';
+import { getVacation } from '@timeblock/core/store/vacations';
+import { formInputs } from '@timeblock/core/vacation';
 import { setMark } from '@timeblock/core/store/event-marks';
 import { useCalendar } from '@/calendar/use-calendar';
 import { forgetEvent } from '@/db/cache';
 import { hideEvent, showEvent } from '@/db/mutations';
 import { env } from '@/env';
 import { minutesLabel } from '@/format';
+import { pickDayAndTime, PICKERS_AVAILABLE } from '@/pickers';
 import { useApp } from '@/state/app';
 import { useTheme, type Theme } from '@/theme';
-import { Button, confirm, Note } from '@/ui';
+import { Button, Checkbox, confirm, Note, plural } from '@/ui';
+import { useLoad } from '@/use-load';
 
 /** One calendar item in full: a block's work to tick off, an event's marks, a vacation's span. */
 export default function ItemScreen() {
@@ -42,15 +47,7 @@ export default function ItemScreen() {
 
       {item.kind === 'block' && <BlockDetails item={item} theme={theme} />}
       {item.kind === 'event' && <EventDetails item={item} theme={theme} />}
-      {item.kind === 'vacation' && item.vacation && (
-        <View style={styles.section}>
-          <Text style={[styles.text, { color: theme.foreground }]}>
-            Closes {item.vacation.windows.length > 0 ? item.vacation.windows.join(', ') : 'no windows'} — nothing is planned in them while you are away.
-          </Text>
-          {item.vacation.inGoogle && <Text style={[styles.note, { color: theme.muted }]}>Also in Google Calendar.</Text>}
-          <Text style={[styles.note, { color: theme.muted }]}>Change it on the desktop.</Text>
-        </View>
-      )}
+      {item.kind === 'vacation' && item.vacation && <VacationDetails item={item} theme={theme} />}
     </ScrollView>
   );
 }
@@ -72,38 +69,6 @@ const STATE_LABEL = {
   synced: 'In Google Calendar',
   done: 'Done',
 } as const;
-
-/**
- * Asks for a day, then a start time (Android's own pickers), in the wall-clock
- * time of the Settings timezone — which the pickers show as if it were the
- * phone's. Resolves to `YYYY-MM-DD` and `HH:mm`, or null when cancelled.
- */
-function pickDayAndTime(start: CalendarItem['start']): Promise<{ date: string; time: string } | null> {
-  const initial = new Date(start.year, start.month - 1, start.day, start.hour, start.minute);
-  return new Promise((resolve) => {
-    DateTimePickerAndroid.open({
-      value: initial,
-      mode: 'date',
-      onChange: (event, day) => {
-        if (event.type !== 'set' || !day) return resolve(null);
-        DateTimePickerAndroid.open({
-          value: new Date(day.getFullYear(), day.getMonth(), day.getDate(), start.hour, start.minute),
-          mode: 'time',
-          is24Hour: true,
-          minuteInterval: 5,
-          onChange: (timeEvent, time) => {
-            if (timeEvent.type !== 'set' || !time) return resolve(null);
-            const pad = (n: number) => String(n).padStart(2, '0');
-            resolve({
-              date: `${time.getFullYear()}-${pad(time.getMonth() + 1)}-${pad(time.getDate())}`,
-              time: `${pad(time.getHours())}:${pad(time.getMinutes())}`,
-            });
-          },
-        });
-      },
-    });
-  });
-}
 
 function BlockDetails({ item, theme }: { item: CalendarItem; theme: Theme }) {
   const { changed } = useApp();
@@ -128,7 +93,7 @@ function BlockDetails({ item, theme }: { item: CalendarItem; theme: Theme }) {
   };
 
   const move = async () => {
-    const picked = await pickDayAndTime(item.start);
+    const picked = await pickDayAndTime({ date: item.start.toISODate()!, time: item.start.toFormat('HH:mm') });
     if (picked) await act('move', () => moveBlockTo(env(), blockId, picked.date, picked.time), true);
   };
 
@@ -174,7 +139,7 @@ function BlockDetails({ item, theme }: { item: CalendarItem; theme: Theme }) {
       {item.movable && (
         <>
           <Text style={[styles.heading, { color: theme.foreground }]}>Adjust</Text>
-          {Platform.OS === 'android' && <Button label="Move…" busy={busy === 'move'} disabled={busy !== null} onPress={move} />}
+          {PICKERS_AVAILABLE && <Button label="Move…" busy={busy === 'move'} disabled={busy !== null} onPress={move} />}
           {item.pinned && <Button label="Unpin" busy={busy === 'unpin'} disabled={busy !== null} onPress={() => act('unpin', () => unpinBlock(env(), blockId))} />}
           <Button label="Delete block" danger busy={busy === 'delete'} disabled={busy !== null} onPress={remove} />
           <Note>
@@ -254,6 +219,8 @@ function EventDetails({ item, theme }: { item: CalendarItem; theme: Theme }) {
         }}
       />
 
+      {item.multiDay && <VacationQuestion item={item} theme={theme} />}
+
       {item.htmlLink && (
         <Pressable onPress={() => void Linking.openURL(item.htmlLink!)} style={[styles.button, { borderColor: theme.border, borderWidth: 1 }]}>
           <Text style={[styles.buttonText, { color: theme.accent }]}>Open in Google Calendar</Text>
@@ -267,6 +234,183 @@ function EventDetails({ item, theme }: { item: CalendarItem; theme: Theme }) {
         )
       )}
       {problem && <Note tone="bad">{problem}</Note>}
+    </View>
+  );
+}
+
+/**
+ * A multi-day event's one question: is it a vacation? Made into one, it stops
+ * counting as busy and the vacation closes just the windows chosen; said not to
+ * be, it stays as Google has it and is not asked about again.
+ */
+function VacationQuestion({ item, theme }: { item: CalendarItem; theme: Theme }) {
+  const { changed } = useApp();
+  const router = useRouter();
+  const answer = async (not: boolean) => {
+    await setMark(env().db, item.hideKey!, item.title, 'notVacation', not);
+    changed();
+  };
+
+  if (item.madeVacationId !== null) {
+    return (
+      <View style={[styles.question, { borderColor: theme.border }]}>
+        <Note>🏖 Made into a vacation — it no longer counts as busy; the vacation closes the windows you chose.</Note>
+        <Button
+          label="Open the vacation"
+          onPress={() => router.push({ pathname: '/item', params: { id: `vacation:${item.madeVacationId}`, view: 'day', date: item.start.toISODate()! } })}
+        />
+      </View>
+    );
+  }
+  const decided = item.notVacation || item.placeholder;
+  const { from, until } = formInputs(item.start, item.end);
+  return (
+    <View style={[styles.question, { borderColor: decided ? theme.border : '#d97706' }]}>
+      {decided ? (
+        <Note>{item.notVacation ? 'Not a vacation, as you said' : 'A placeholder'} — it is not asked about again.</Note>
+      ) : (
+        <Text style={[styles.text, { color: theme.foreground }]}>
+          Is this a vacation? Until you say, it {item.busy ? 'blocks every window while it lasts' : 'blocks nothing — it is marked free, so work may be planned into it'}.
+        </Text>
+      )}
+      <Button
+        label={`Make ${item.recurring ? 'this one' : 'it'} a vacation…`}
+        onPress={() => router.push({ pathname: '/vacation', params: { from, until, note: item.title, source: item.occurrence! } })}
+      />
+      {!decided && <Button label={`Not a vacation${item.recurring ? ' (every repeat)' : ''}`} onPress={() => answer(true)} />}
+      {item.notVacation && <Button label="Ask again" onPress={() => answer(false)} />}
+    </View>
+  );
+}
+
+const targetOf = (value: string): ConflictTarget => JSON.parse(value) as ConflictTarget;
+
+/** A vacation: the windows it closes, what is scheduled during it, and edit / delete. */
+function VacationDetails({ item, theme }: { item: CalendarItem; theme: Theme }) {
+  const app = useApp();
+  const router = useRouter();
+  const v = item.vacation!;
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState<string | null>(null);
+  const [message, setMessage] = useState<{ text: string; tone: 'good' | 'bad' | 'warn' } | null>(null);
+
+  const { data: conflicts } = useLoad(async () => {
+    const e = env();
+    const [vacation, settings] = await Promise.all([getVacation(e.db, v.id), getSettings(e.db)]);
+    return vacation ? vacationConflicts(e, vacation, settings) : null;
+  }, [app.version, v.id]);
+
+  const items = conflicts?.items ?? [];
+  const live = new Set(items.map((i) => i.value));
+  const chosen = [...picked].filter((value) => live.has(value));
+  const deletable = items.filter((i) => i.deletable);
+  const toggle = (value: string) =>
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(value)) next.delete(value);
+      else next.add(value);
+      return next;
+    });
+
+  const deleteChosen = async () => {
+    const chosenItems = chosen.map((value) => items.find((i) => i.value === value)!);
+    const inGoogle = chosenItems.filter((i) => i.kind === 'event').length;
+    const ok = await confirm(
+      `Delete ${plural(chosen.length, 'item')}?`,
+      `${inGoogle > 0 ? `${inGoogle} of them will be deleted from Google Calendar. ` : ''}This cannot be undone here.`,
+      'Delete',
+    );
+    if (!ok) return;
+    setBusy('cleanup');
+    setMessage(null);
+    try {
+      const result = await deleteDuringVacation(
+        env(),
+        chosenItems.map((i) => ({ target: targetOf(i.value), title: i.title })),
+      );
+      for (const i of chosenItems) {
+        const t = targetOf(i.value);
+        if (t.kind === 'event') forgetEvent(t.calendarId, t.eventId);
+      }
+      setPicked(new Set());
+      setMessage({
+        text: `Deleted ${result.deleted}.${result.failed.map((f) => ` Could not delete “${f.title}”: ${f.message}.`).join('')}`,
+        tone: result.failed.length > 0 ? 'warn' : 'good',
+      });
+      app.changed();
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const remove = async () => {
+    if (!(await confirm('Delete this vacation?', 'Its windows open again for planning.', 'Delete'))) return;
+    setBusy('delete');
+    try {
+      await removeVacation(env(), v.id);
+      app.changed();
+      router.back();
+    } catch (error) {
+      setMessage({ text: (error as Error).message, tone: 'bad' });
+      setBusy(null);
+    }
+  };
+
+  return (
+    <View style={styles.section}>
+      <Text style={[styles.heading, { color: theme.foreground }]}>Unavailable for</Text>
+      <Text style={[styles.text, { color: theme.foreground }]}>{v.windows.length > 0 ? v.windows.join(', ') : 'no windows'}</Text>
+      <Note>Nothing is planned in these windows while you are away; other windows work as usual.</Note>
+      <Note>
+        {v.inGoogle && v.inGoogleNow
+          ? '📅 Also in Google Calendar (TimeBlock — Focus).'
+          : v.inGoogle
+            ? '📅 Meant to be in Google Calendar, but not there yet — save it again to retry.'
+            : 'Not in Google Calendar — turn on “Also show in Google Calendar” under Edit to add it.'}
+      </Note>
+
+      <View style={styles.inlineHeading}>
+        <Text style={[styles.heading, { color: theme.foreground, flex: 1 }]}>Scheduled during it ({items.length})</Text>
+        {deletable.length > 0 && (
+          <>
+            <Text style={[styles.link, { color: theme.accent }]} onPress={() => setPicked(new Set(deletable.map((i) => i.value)))}>
+              all
+            </Text>
+            <Text style={[styles.link, { color: theme.accent }]} onPress={() => setPicked(new Set())}>
+              none
+            </Text>
+          </>
+        )}
+      </View>
+      {!conflicts && <Note>Looking…</Note>}
+      {conflicts?.problem && <Note tone="warn">Google Calendar could not be read, so only TimeBlock blocks are listed: {conflicts.problem}</Note>}
+      {conflicts && items.length === 0 && <Note>Nothing is scheduled during it.</Note>}
+      {items.map((i: Conflict) => (
+        <Checkbox
+          key={i.value}
+          checked={chosen.includes(i.value)}
+          onPress={() => toggle(i.value)}
+          disabled={!i.deletable}
+          label={i.title}
+          detail={`${i.when} · ${i.source}${i.recurring ? ' · this repeat only' : ''}${i.why ? ` · ${i.why}` : ''}`}
+          color={i.color}
+          strike={false}
+        />
+      ))}
+      {items.length > 0 && (
+        <Button
+          label={chosen.length > 0 ? `Delete ${chosen.length} selected` : 'Tick what to delete'}
+          danger
+          busy={busy === 'cleanup'}
+          disabled={chosen.length === 0 || busy !== null}
+          onPress={deleteChosen}
+        />
+      )}
+      {message && <Note tone={message.tone}>{message.text}</Note>}
+
+      <Button label="Edit dates, windows or note" onPress={() => router.push({ pathname: '/vacation', params: { id: String(v.id) } })} />
+      <Button label="Delete vacation" danger busy={busy === 'delete'} disabled={busy !== null} onPress={remove} />
+      <Note>After a change, run Reschedule… (Plan) to move work planned into it.</Note>
     </View>
   );
 }
@@ -301,5 +445,8 @@ const styles = StyleSheet.create({
   button: { borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
   buttonText: { color: '#fff', fontWeight: '700', fontSize: 15 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderWidth: 1, borderRadius: 10 },
+  question: { gap: 8, borderWidth: 1, borderRadius: 10, padding: 12 },
+  inlineHeading: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 4 },
+  link: { fontSize: 13, fontWeight: '600' },
   rowLabel: { fontSize: 15, fontWeight: '600' },
 });

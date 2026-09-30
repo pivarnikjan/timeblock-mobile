@@ -16,6 +16,10 @@ plan on the calendar, offline, in step with the desktop.
   follows), unpin, delete; progress and task status follow the desktop's rules.
 - **Events** — important (★ in Month), placeholder (planning may use the
   time), hide; hide whole calendars; delete from Google Calendar.
+- **Vacations** (🏖) — set, edit or delete one (the windows it closes, a note,
+  optionally shown in Google Calendar); see what is scheduled during it and
+  delete what you pick; answer "is it a vacation?" for multi-day events, and
+  move a vacation with its event when that moved in Google.
 - **Offline** — everything is in a local SQLite database; Google events are
   kept from the last read. Changes sync when the phone is online again.
 
@@ -23,8 +27,8 @@ Both devices plan. So they never put the same work into Google twice, the
 phone **syncs with the desktop right before** it plans, reschedules or
 commits — and does none of them when that sync fails (offline, signed out).
 Drafts stay on the device that made them until committed. Still on the desktop
-only, for now: vacations, the Year/Month/Week planning screens and Tasks
-(coming next), and — by choice — CSV import and editing time windows.
+only, for now: the Year/Month/Week planning screens and Tasks (coming next),
+and — by choice — CSV import and editing time windows.
 
 ## How it syncs
 
@@ -228,7 +232,7 @@ and commit the moved submodule.
 
 | Where | What |
 | --- | --- |
-| `src/app/` | Screens (Expo Router): calendar, item details, My day (`today.tsx`), Plan calendar (`plan.tsx`), settings |
+| `src/app/` | Screens (Expo Router): calendar, item details, My day (`today.tsx`), Plan calendar (`plan.tsx`), Vacations (`vacations.tsx`, the form in `vacation.tsx`), settings |
 | `src/env.ts` | Core's `Env` on the phone: its database and Google Calendar through the sign-in — what core's planner, stores and operations run against |
 | `src/ui.tsx` | Shared building blocks: sections, buttons, checkboxes, progress bars, confirmations |
 | `src/calendar/` | Time grid, month grid, the calendar hook (core's `assembleCalendar`) |
