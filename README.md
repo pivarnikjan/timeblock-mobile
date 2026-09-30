@@ -35,112 +35,65 @@ up*: enable the Google Drive API for its Google Cloud project, add the
 `drive.appdata` scope, reconnect. Check that **Settings → Phone sync** there
 says it synced.
 
-**1. Get the code** (the desktop repository comes along as a submodule — the
-shared code lives there):
+The app is built on this computer and installed on the phone over USB or
+Wi-Fi. **[docs/deploy-android.md](docs/deploy-android.md)** covers every step
+in detail; in short:
 
-```bash
-git clone --recurse-submodules https://github.com/pivarnikjan/timeblock-mobile.git
+**1. Get the code at a short path.** Use a path of 40 characters or fewer,
+such as `C:\dev\timeblock-mobile`; the native build fails on Windows' path
+limit otherwise. Clone it with the desktop repository as a submodule, because
+the shared code lives there:
+
+```powershell
+git clone --recurse-submodules https://github.com/pivarnikjan/timeblock-mobile.git C:\dev\timeblock-mobile
 ```
 
-```bash
-npm install
-```
-
-**2. Build an APK with EAS** (Expo's cloud build — no Android SDK needed; the
-free plan is enough). Sign in to (or create) an Expo account, link the project,
-and build:
-
-```bash
-npx eas-cli@latest login
-```
-
-```bash
-npx eas-cli@latest init
-```
-
-```bash
-npx eas-cli@latest build --platform android --profile preview
-```
-
-The first build asks to generate a keystore — say yes. It ends with a link to
-the APK.
-
-**3. Let Google recognise the app.** Android sign-in is tied to the app's
-package name and signing certificate. Get the certificate's SHA-1:
-
-```bash
-npx eas-cli@latest credentials --platform android
-```
-
-(choose the *preview* profile → *Keystore* → it shows *SHA1 Fingerprint*). Then
-in <https://console.cloud.google.com/>, **in the same project as the desktop**
-(the Drive folder belongs to the project): **Google Auth platform → Clients →
-Create client → Android**, package name `com.pivarnikjan.timeblock`, paste the
-SHA-1, **Create**. There is no secret to copy.
-
-**4. Install and sign in.** Open the APK link on the phone and install it
-(allow installing from your browser when Android asks). Open TimeBlock →
-**⚙ → Sign in with Google** with the desktop's account, and on Google's screen
-allow both calendar access and *See, create, and delete its own configuration
-data in your Google Drive*. The desktop's plan arrives with the first sync.
-
-Optional: set `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` to the desktop's
-`GOOGLE_CLIENT_ID` (in EAS: `npx eas-cli@latest env:create`) — Google
-recommends passing a web client id; sign-in works without it.
-
-### Troubleshooting
-
-| What you see | Why | Do this |
-| --- | --- | --- |
-| Sign-in fails with `DEVELOPER_ERROR` (code 10) | Google does not know this package + SHA-1 pair. | Check step 3: the Android client's package name and the SHA-1 of the keystore that signed *this* build (development and preview builds may use different ones). |
-| *Google Drive access missing* | A box was left unticked on Google's screen. | **⚙ → Grant access**. |
-| *The Google Drive API is not enabled* | Step 0. | Enable it for the project, then pull to refresh. |
-| Sync stops after a week | The Google Cloud app is in *Testing*: Google expires sign-ins after 7 days. | Publish the app (desktop's `docs/google-calendar-setup.md`). |
-| *Away too long to sync safely* | The phone last synced over 90 days ago. | **⚙ → Replace this phone's data with the desktop's**. |
-
-## Develop
-
-```bash
-npx eas-cli@latest build --platform android --profile development
-```
-
-installs a development build (once per native change); then `npm start` serves
-the JavaScript to it. Before calling a change done:
-
-```bash
-npx tsc --noEmit
-```
-
-```bash
-npx expo lint
-```
-
-```bash
-npx expo export --platform android
-```
-
-**Without EAS**, on this computer: **[docs/deploy-android.md](docs/deploy-android.md)**
-covers it step by step, from installing the toolchain to signing in on the phone.
-The project must sit at a **short path** (40 characters or fewer, such as
-`C:\dev\timeblock-mobile`): the native build fails on Windows' path limit
-otherwise. In short:
+**2. Install the Android toolchain (once).** In the project's folder:
 
 ```powershell
 .\scripts\deploy.ps1 -Install
 ```
 
-installs Java 17 and the Android SDK once. It asks you to accept Google's
-licences. Then open a new terminal, connect the phone (`adb pair` / `adb
-connect` over Wi-Fi, or USB), and run:
+It installs Java 17 and the Android SDK, sets the environment variables, and
+runs `npm install`. It asks you to accept Google's licences. Then open a new
+terminal.
+
+**3. Connect the phone.** Turn on **USB debugging** in its developer options,
+then plug it in or pair it over Wi-Fi. `adb devices` should list it as
+`device`. For the phone used here, see *The motorola edge 70 fusion* below.
+
+**4. Build and install:**
 
 ```powershell
 .\scripts\deploy.ps1 -Release
 ```
 
-This builds the app and installs it on the phone. Without `-Release` you get a
-debug build that loads its JavaScript from the dev server. Register the local
-debug keystore's SHA-1 with Google, as in step 3 above; the guide shows how to
-read it.
+This builds the app and installs it on the phone. The first build takes a
+while.
+
+**5. Let Google recognise the app.** Android sign-in is tied to the app's
+package name and signing certificate. Builds made here are signed with the
+debug keystore that the build generates. Read its SHA-1 (`keytool` comes with
+the JDK):
+
+```powershell
+keytool -list -v -keystore android\app\debug.keystore -alias androiddebugkey -storepass android -keypass android
+```
+
+Then, in <https://console.cloud.google.com/>, **in the same project as the
+desktop** (the Drive folder belongs to the project): **Google Auth platform →
+Clients → Create client → Android**. Enter package name
+`com.pivarnikjan.timeblock`, paste the SHA-1, and click **Create**. There is no
+secret to copy.
+
+**6. Sign in.** Open TimeBlock → **⚙ → Sign in with Google** with the
+desktop's account. On Google's screen, allow both calendar access and *See,
+create, and delete its own configuration data in your Google Drive*. The
+desktop's plan arrives with the first sync.
+
+Optional: put `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=` followed by the desktop's
+`GOOGLE_CLIENT_ID` in a `.env.local` file (git ignores it), then build again.
+Google recommends passing a web client ID; sign-in works without it.
 
 ### The motorola edge 70 fusion
 
@@ -171,11 +124,11 @@ options** → turn on **USB debugging**.
 
   `adb devices -l` names it `model:motorola_edge_70_fusion device:marvel`.
 
-Over Wi-Fi, as an alternative to the cable: **Settings → System → Developer options →
-Wireless debugging** → on → **Pair device with pairing code**, then run
-`adb pair <address>` and `adb connect <IP address & Port>` as in the guide's
-step 2. The connect port changes after a restart or after turning Wireless
-debugging off and on. Run `adb connect` again when it does.
+Over Wi-Fi, as an alternative to the cable: **Settings → System → Developer
+options → Wireless debugging** → on → **Pair device with pairing code**, then
+run `adb pair <address>` and `adb connect <IP address & Port>` as in the
+guide's step 2. The connect port changes after a restart or after turning
+Wireless debugging off and on. Run `adb connect` again when it does.
 
 **3. Check, then deploy** from the project at its short path:
 
@@ -191,9 +144,47 @@ The phone should be listed by its serial number as `device`. Then:
 
 The script prints the phone it found, such as `Phone: motorola edge 70 fusion
 (<serial>, arm64-v8a)`. It compiles the release build for that CPU type only,
-about a quarter of the native work of all four types. The APK therefore runs
-on 64-bit Arm phones like this one; use the EAS build for others. Installing
-through `adb` needs no *install unknown apps* permission on the phone.
+about a quarter of the native work of all four types. The APK is therefore
+for this phone; to install on another phone, connect that one and deploy
+again. Installing through `adb` needs no *install unknown apps* permission on
+the phone.
+
+### Troubleshooting
+
+Build and connection problems: the guide's
+[Troubleshooting](docs/deploy-android.md#troubleshooting).
+
+| What you see | Why | Do this |
+| --- | --- | --- |
+| Sign-in fails with `DEVELOPER_ERROR` (code 10) | Google does not know this package + SHA-1 pair. | Check step 5: the Android client's package name and the SHA-1 of the keystore that signed *this* build. If `android\` was regenerated, its keystore and SHA-1 may be new. |
+| *Google Drive access missing* | A box was left unticked on Google's screen. | **⚙ → Grant access**. |
+| *The Google Drive API is not enabled* | Step 0. | Enable it for the project, then pull to refresh. |
+| Sync stops after a week | The Google Cloud app is in *Testing*: Google expires sign-ins after 7 days. | Publish the app (desktop's `docs/google-calendar-setup.md`). |
+| *Away too long to sync safely* | The phone last synced over 90 days ago. | **⚙ → Replace this phone's data with the desktop's**. |
+
+## Develop
+
+```powershell
+.\scripts\deploy.ps1
+```
+
+installs a debug build and starts the dev server, which serves the JavaScript
+to it. Keep that terminal open. A code change then only needs a reload: press
+`r` there, or shake the phone → **Reload**. Build again only after adding a
+package with native code; otherwise `npm start` serves the JavaScript to the
+installed debug build. Before calling a change done:
+
+```bash
+npx tsc --noEmit
+```
+
+```bash
+npx expo lint
+```
+
+```bash
+npx expo export --platform android
+```
 
 **In a browser**, for a quick look at the screens: `npm run web`, open
 <http://localhost:8081>, then **⚙ → Load a demo plan** (there is no Google
