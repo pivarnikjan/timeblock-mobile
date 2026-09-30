@@ -59,3 +59,20 @@ export function pickDate(initial: string): Promise<string | null> {
     });
   });
 }
+
+/** Asks for a time of day (Android's clock); resolves to `HH:mm`, or null when cancelled. */
+export function pickTime(initial: string, options: { minuteInterval?: 1 | 5 | 15 | 30 } = {}): Promise<string | null> {
+  const [hh, mm] = initial.split(':').map(Number);
+  return new Promise((resolve) => {
+    DateTimePickerAndroid.open({
+      value: new Date(2000, 0, 1, hh, mm),
+      mode: 'time',
+      is24Hour: true,
+      minuteInterval: options.minuteInterval ?? 15,
+      onChange: (event, time) => {
+        if (event.type !== 'set' || !time) return resolve(null);
+        resolve(`${pad(time.getHours())}:${pad(time.getMinutes())}`);
+      },
+    });
+  });
+}
