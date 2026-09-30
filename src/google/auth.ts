@@ -75,9 +75,23 @@ export async function signOut(): Promise<void> {
   await GoogleSignin.signOut();
 }
 
+// The library takes one token request at a time, and one token clearing at a time: a second
+// call while one is out rejects the first ("previous promise did not settle"). Sync, the
+// calendar and the planner all ask at once, so they share the request out and clear in turn.
+let fetching: Promise<string> | null = null;
+let clearing: Promise<void> = Promise.resolve();
+
 /** A current access token; Google refreshes it when it has expired. */
-export async function accessToken(): Promise<string> {
+export function accessToken(): Promise<string> {
+  fetching ??= fetchToken().finally(() => {
+    fetching = null;
+  });
+  return fetching;
+}
+
+async function fetchToken(): Promise<string> {
   configure();
+  await clearing;
   const { accessToken } = await GoogleSignin.getTokens();
   if (!accessToken) throw new Error('Google did not hand out an access token — sign in again in Settings.');
   return accessToken;
@@ -85,6 +99,13 @@ export async function accessToken(): Promise<string> {
 
 /** Throws away a token Google refused (401), and gets a new one. */
 export async function renewAccessToken(refused: string): Promise<string> {
-  await GoogleSignin.clearCachedAccessToken(refused);
+  // A request already out may hand back the refused token: let it finish before clearing.
+  const before = fetching;
+  const cleared = clearing.then(async () => {
+    await before?.catch(() => undefined);
+    await GoogleSignin.clearCachedAccessToken(refused);
+  });
+  clearing = cleared.catch(() => undefined);
+  await cleared;
   return accessToken();
 }
