@@ -89,3 +89,13 @@ export function forgetEvent(calendarId: string, eventId: string): void {
     }
   });
 }
+
+/** The events the multi-day reviews were last worked out from (the next three months), for offline use. */
+export function cachedReviewEvents(): { events: CalendarEvent[]; readAt: string } | null {
+  const hit = read<CalendarEvent[]>('review-events');
+  return hit ? { events: hit.value, readAt: hit.savedAt } : null;
+}
+
+export function saveReviewEvents(events: CalendarEvent[]): void {
+  write('review-events', events, new Date().toISOString());
+}

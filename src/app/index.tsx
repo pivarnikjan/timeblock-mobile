@@ -8,6 +8,7 @@ import { nowIn } from '@timeblock/core/time/periods';
 import { MonthGrid } from '@/calendar/MonthGrid';
 import { TimeGrid } from '@/calendar/TimeGrid';
 import { useCalendar } from '@/calendar/use-calendar';
+import { useMultiDayReviews } from '@/calendar/use-reviews';
 import { savedView, saveView } from '@/db/cache';
 import { getSettings } from '@/db/queries';
 import { ago } from '@/format';
@@ -33,6 +34,9 @@ export default function CalendarScreen() {
   const zone = useMemo(() => getSettings().timezone, [app.version]); // eslint-disable-line react-hooks/exhaustive-deps
   const [anchor, setAnchor] = useState(() => nowIn(zone).toISODate()!);
   const { layout, problem, eventsReadAt, loading, refresh } = useCalendar(view, anchor);
+  const { reviews, refresh: refreshReviews } = useMultiDayReviews();
+  const undecided = reviews.filter((r) => r.kind === 'undecided').length;
+  const moved = reviews.length - undecided;
 
   // Other screens open the calendar at a day ("Review from Mon 5 Oct →"): taken over once per request.
   const params = useLocalSearchParams<{ date?: string; view?: string }>();
@@ -71,6 +75,9 @@ export default function CalendarScreen() {
             <Pressable onPress={() => router.push('/plan')} hitSlop={8} accessibilityRole="button" style={[styles.action, { backgroundColor: theme.accent, borderColor: theme.accent }]}>
               <Text style={[styles.actionText, { color: '#fff' }]}>Plan</Text>
             </Pressable>
+            <Pressable onPress={() => router.push('/vacations')} hitSlop={8} accessibilityRole="button" accessibilityLabel="Vacations">
+              <Text style={styles.gear}>🏖</Text>
+            </Pressable>
             <Pressable onPress={() => router.push('/settings')} hitSlop={12} accessibilityRole="button" accessibilityLabel="Settings">
               <Text style={[styles.gear, { color: theme.muted }]}>⚙</Text>
             </Pressable>
@@ -98,6 +105,20 @@ export default function CalendarScreen() {
           </View>
         </View>
 
+        {reviews.length > 0 && (
+          <Pressable onPress={() => router.push('/vacations')} style={[styles.banner, { borderColor: '#d97706' }]} accessibilityRole="button">
+            <Text style={[styles.status, { color: theme.foreground }]} numberOfLines={2}>
+              {[
+                undecided > 0 && `🏖 ${undecided} multi-day event${undecided === 1 ? '' : 's'} — is it a vacation?`,
+                moved > 0 && `${moved} vacation${moved === 1 ? '' : 's'} no longer match${moved === 1 ? 'es' : ''} Google`,
+              ]
+                .filter(Boolean)
+                .join(' · ')}{' '}
+              Tap to decide.
+            </Text>
+          </Pressable>
+        )}
+
         <Pressable onPress={() => router.push('/settings')}>
           <Text style={[styles.status, { color: status.tone === 'bad' ? theme.danger : theme.muted }]} numberOfLines={1}>
             {status.text}
@@ -106,9 +127,15 @@ export default function CalendarScreen() {
       </View>
 
       {view === 'month' ? (
-        <MonthGrid layout={layout} onOpen={open} onOpenDay={openDay} refreshing={app.syncing || loading} onRefresh={() => void refresh()} />
+        <MonthGrid layout={layout} onOpen={open} onOpenDay={openDay} refreshing={app.syncing || loading} onRefresh={() => void Promise.all([refresh(), refreshReviews()])} />
       ) : (
-        <TimeGrid layout={layout} onOpen={open} onOpenDay={openDay} refreshing={app.syncing || loading} onRefresh={() => void refresh()} />
+        <TimeGrid
+          layout={layout}
+          onOpen={open}
+          onOpenDay={openDay}
+          refreshing={app.syncing || loading}
+          onRefresh={() => void Promise.all([refresh(), refreshReviews()])}
+        />
       )}
     </SafeAreaView>
   );
@@ -162,4 +189,5 @@ const styles = StyleSheet.create({
   segment: { paddingHorizontal: 10, paddingVertical: 6 },
   segmentText: { fontSize: 13, fontWeight: '600' },
   status: { fontSize: 12 },
+  banner: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
 });

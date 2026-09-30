@@ -68,7 +68,25 @@ export function ToggleRow({ label, value, onChange, color, hint }: { label: stri
   );
 }
 
-export function Checkbox({ checked, onPress, label, detail, disabled }: { checked: boolean; onPress(): void; label: string; detail?: string; disabled?: boolean }) {
+export function Checkbox({
+  checked,
+  onPress,
+  label,
+  detail,
+  disabled,
+  color,
+  strike = true,
+}: {
+  checked: boolean;
+  onPress(): void;
+  label: string;
+  detail?: string;
+  disabled?: boolean;
+  /** A colour swatch before the label (a window's, an event's). */
+  color?: string;
+  /** Strike the label through when ticked — for work done; off for choices. */
+  strike?: boolean;
+}) {
   const theme = useTheme();
   return (
     <Pressable
@@ -81,7 +99,8 @@ export function Checkbox({ checked, onPress, label, detail, disabled }: { checke
       <View style={[ui.box, { borderColor: checked ? theme.ok : theme.muted, backgroundColor: checked ? theme.ok : 'transparent' }]}>
         {checked && <Text style={ui.check}>✓</Text>}
       </View>
-      <Text style={[ui.text, { flex: 1, color: theme.foreground }, checked && { color: theme.muted, textDecorationLine: 'line-through' }]}>{label}</Text>
+      {color && <View style={[ui.swatch, { backgroundColor: color }]} />}
+      <Text style={[ui.text, { flex: 1, color: theme.foreground }, checked && strike && { color: theme.muted, textDecorationLine: 'line-through' }]}>{label}</Text>
       {detail && <Text style={[ui.note, { color: theme.muted }]}>{detail}</Text>}
     </Pressable>
   );

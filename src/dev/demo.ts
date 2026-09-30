@@ -1,7 +1,7 @@
 import { DateTime } from 'luxon';
 import type { CalendarEvent, CalendarSummary } from '@timeblock/core/google/events';
 import { blocks, blockSegments, horizons, tasks, timeWindows, vacations } from '@timeblock/core/db/schema';
-import { saveCalendars, saveEvents } from '@/db/cache';
+import { saveCalendars, saveEvents, saveReviewEvents } from '@/db/cache';
 import { database } from '@/db/database';
 import { getSettings } from '@/db/queries';
 
@@ -90,6 +90,8 @@ export function loadDemoPlan(): void {
     event('conference', 'demo-work', 'ServiceNow Knowledge', today.plus({ days: 3 }), today.plus({ days: 6 }), { allDay: true }),
   ];
   saveCalendars(calendars);
+  // What the multi-day reviews read on a phone ("is ServiceNow Knowledge a vacation?").
+  saveReviewEvents(events.filter((e) => e.end > utc(today)));
   saveEvents(
     days.map((d) => d.toISODate()!),
     events,
