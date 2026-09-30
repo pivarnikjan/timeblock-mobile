@@ -2,8 +2,7 @@
 
 This guide builds the app **on this computer** and installs it on your phone
 over Wi-Fi or USB. You don't need an Expo account or a build queue, and a
-rebuild takes a few minutes. The README's *Set it up* describes the other
-route, which builds in Expo's cloud (EAS) and needs no Android SDK.
+rebuild takes a few minutes.
 
 | | When |
 | --- | --- |
@@ -212,8 +211,7 @@ installs over the other and keeps the app's data.
 Google sign-in on Android only works for a build whose **package name +
 signing certificate** Google knows. Builds made here are signed with the
 **debug keystore** in `android\app\debug.keystore`, both debug and release
-variants. That is a different certificate from EAS's, so Google needs this one
-too.
+variants, so Google needs that certificate.
 
 Read its SHA-1. `keytool` comes with the JDK; the store and key passwords of
 the debug keystore are the well-known `android`:
@@ -231,14 +229,14 @@ Copy the **SHA1:** line. Then, in <https://console.cloud.google.com/>, in the
 4. SHA-1 certificate fingerprint: paste it
 5. **Create**. There is no secret to copy.
 
-This client can sit next to the one for EAS builds, one Android client per
-signing certificate. Google can take a few minutes to accept a new client.
+Google needs one Android client per signing certificate. It can take a few
+minutes to accept a new client.
 
 You do this once. Do it again only if `android\` is regenerated (deleted, or
 `npx expo prebuild --clean`) and the new keystore's SHA-1 differs.
 
-> The debug keystore is meant for your own devices. Share only builds signed
-> with a release key; the EAS route creates and keeps one for you.
+> The debug keystore is a well-known one, meant for your own devices. Don't
+> share APKs signed with it.
 
 ## Step 5 — Sign in on the phone
 
@@ -283,10 +281,12 @@ npm install
 Reconnect the phone first if its Wireless debugging port changed (step 2,
 `adb connect`). The update installs over the old version and keeps its data.
 
-## Switching between an EAS build and a local build
+## When Android refuses to update the app
 
-The two are signed with different keys, so Android refuses to install one over
-the other (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`). To switch:
+Android installs an update only if it is signed with the same key as the
+installed copy. If the installed copy came from somewhere else, such as an APK
+built on another computer with a different key, the install fails with
+`INSTALL_FAILED_UPDATE_INCOMPATIBLE`. To replace it:
 
 1. Open the installed app and pull to refresh, so everything it holds is
    synced.
@@ -296,7 +296,7 @@ the other (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`). To switch:
    adb uninstall com.pivarnikjan.timeblock
    ```
 
-3. Deploy the other build and sign in again. The plan comes back from the sync.
+3. Deploy again and sign in again. The plan comes back from the sync.
 
 ## Troubleshooting
 
@@ -309,8 +309,8 @@ the other (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`). To switch:
 | `SDK location not found` | `ANDROID_HOME` isn't set in this terminal. | Open a new terminal. |
 | `This folder's path is … characters long` | The project is at a long path. | Move it to `C:\dev\timeblock-mobile` (*Before you start*). |
 | `ninja: error: manifest 'build.ninja' still dirty after 100 tries`, or another CMake / ninja error about a missing file | A path inside the build is over 260 characters, so ninja can't see the file. The *long paths* setting doesn't help ninja 1.10. | Move the project to a short path, then delete `android\` and the `.cxx` folders (*Before you start*). |
-| A native build step fails on Windows on Arm | An x64 SDK tool didn't run under emulation. | Use the EAS cloud build (README, *Set it up*). |
-| `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | An EAS build is installed, and it has a different key. | See *Switching between an EAS build and a local build*. |
+| A native build step fails on Windows on Arm | An x64 SDK tool didn't run under emulation. | Run the build again; the first runs under emulation are the slowest. If it fails at the same step again, note which one. |
+| `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | The installed copy has a different signing key. | See *When Android refuses to update the app*. |
 | Debug build: red screen *Unable to load script* | The phone can't reach the dev server. | Keep the `deploy.ps1` terminal open. Allow Node.js through the Windows firewall on private networks. Put the phone and computer on the same Wi-Fi. |
 | Sign-in fails with `DEVELOPER_ERROR` (code 10) | Google doesn't know this package + SHA-1 pair. | Step 4, with the SHA-1 of the keystore that signed *this* build. Wait a few minutes after creating the client. |
 | *Google Drive access missing* | A box was left unticked on Google's screen. | **⚙ → Grant access**. |
