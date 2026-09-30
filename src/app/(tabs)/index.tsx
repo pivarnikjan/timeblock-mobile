@@ -6,6 +6,7 @@ import type { CalendarItem } from '@timeblock/core/calendar/assemble';
 import { parseView, type CalendarView } from '@timeblock/core/calendar/views';
 import { nowIn } from '@timeblock/core/time/periods';
 import { MonthGrid } from '@/calendar/MonthGrid';
+import { SwipePages } from '@/calendar/SwipePages';
 import { TimeGrid } from '@/calendar/TimeGrid';
 import { useCalendar } from '@/calendar/use-calendar';
 import { useMultiDayReviews } from '@/calendar/use-reviews';
@@ -123,17 +124,19 @@ export default function CalendarScreen() {
         </Pressable>
       </View>
 
-      {view === 'month' ? (
-        <MonthGrid layout={layout} onOpen={open} onOpenDay={openDay} refreshing={app.syncing || loading} onRefresh={() => void Promise.all([refresh(), refreshReviews()])} />
-      ) : (
-        <TimeGrid
-          layout={layout}
-          onOpen={open}
-          onOpenDay={openDay}
-          refreshing={app.syncing || loading}
-          onRefresh={() => void Promise.all([refresh(), refreshReviews()])}
-        />
-      )}
+      <SwipePages page={`${view}:${layout.range.days[0]}`} onPrev={() => setAnchor(layout.range.prev)} onNext={() => setAnchor(layout.range.next)}>
+        {view === 'month' ? (
+          <MonthGrid layout={layout} onOpen={open} onOpenDay={openDay} refreshing={app.syncing || loading} onRefresh={() => void Promise.all([refresh(), refreshReviews()])} />
+        ) : (
+          <TimeGrid
+            layout={layout}
+            onOpen={open}
+            onOpenDay={openDay}
+            refreshing={app.syncing || loading}
+            onRefresh={() => void Promise.all([refresh(), refreshReviews()])}
+          />
+        )}
+      </SwipePages>
     </SafeAreaView>
   );
 }
