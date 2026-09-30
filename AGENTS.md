@@ -63,5 +63,9 @@ the debug key — an app installed with one key can't be updated by a build sign
   Phone-only data (Google events read, the chosen view) lives in `phone_cache`.
 - **Sync** is core's `syncWithDrive` over Google Drive's app data folder
   (`src/sync/phone-sync.ts`); after a local change call `changed()` from `useApp()`.
+- **Planning and writes go through core**: the planner (`@timeblock/core/planner`),
+  stores (`store/*`) and operations (`operations/*`) take the phone's `Env` from
+  `env()` in `src/env.ts`. Never reimplement them here. Anything that plans,
+  reschedules or commits calls `syncFirst()` from `useApp()` first, and stops if it throws.
 - Checks before declaring work done: `npx tsc --noEmit`, `npx expo lint`, and
   `npx expo export --platform android` (bundles without the Android SDK).

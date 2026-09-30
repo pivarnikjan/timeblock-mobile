@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AppState } from 'react-native';
+import { setGoogleAccount } from '@/env';
 import * as auth from '@/google/auth';
 import { phoneSyncStatus, replacePhoneData, StaleDeviceError, syncPhone } from '@/sync/phone-sync';
 
@@ -25,6 +26,13 @@ interface App {
   /** Call after changing data here: screens re-read, and a sync follows shortly. */
   changed(): void;
   sync(options?: { allowStale?: boolean }): Promise<void>;
+  /**
+   * Syncs with the desktop and throws when that fails. Planning, rescheduling
+   * and committing call it first: both devices can plan, and a plan made
+   * without the other's latest ticks and blocks could put the same work into
+   * Google twice.
+   */
+  syncFirst(): Promise<void>;
   replaceFromDrive(): Promise<void>;
 }
 
@@ -76,6 +84,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [account, runSync],
   );
 
+  const syncFirst = useCallback(async () => {
+    // The browser preview has no sign-in and nothing to sync with: it plans on its local data alone.
+    if (!auth.SIGN_IN_AVAILABLE) return;
+    if (!account) throw new Error('Sign in with Google first (⚙ Settings): planning syncs with the desktop before it starts.');
+    if (!account.complete) throw new Error('Google Drive or Calendar access is missing — grant it in ⚙ Settings first.');
+    let failure: unknown = null;
+    await running.current;
+    await runSync(async () => {
+      try {
+        await syncPhone();
+      } catch (error) {
+        failure = error;
+        throw error;
+      }
+    });
+    if (failure instanceof StaleDeviceError) {
+      throw new Error('This phone was away too long to sync safely — choose what to do in ⚙ Settings, then try again.');
+    }
+    if (failure) {
+      const reason = phoneSyncStatus().device.lastError ?? (failure as Error).message;
+      throw new Error(`Could not sync with the desktop first, so nothing was planned or sent to Google (${reason}). Try again when online.`);
+    }
+  }, [account, runSync]);
+
   const replaceFromDrive = useCallback(() => (account ? runSync(() => replacePhoneData()) : Promise.resolve()), [account, runSync]);
 
   const changed = useCallback(() => {
@@ -83,6 +115,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (pushTimer.current) clearTimeout(pushTimer.current);
     pushTimer.current = setTimeout(() => void sync(), PUSH_AFTER_MS);
   }, [bump, sync]);
+
+  // Core's planner and Google writes use the signed-in account.
+  useEffect(() => setGoogleAccount(account), [account]);
 
   // Who is signed in, from last time.
   useEffect(() => {
@@ -123,9 +158,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       grantMissingScopes: async () => setAccount((await auth.grantMissingScopes()) ?? account),
       changed,
       sync,
+      syncFirst,
       replaceFromDrive,
     }),
-    [version, account, restoring, syncing, status, stale, changed, sync, replaceFromDrive],
+    [version, account, restoring, syncing, status, stale, changed, sync, syncFirst, replaceFromDrive],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

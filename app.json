@@ -26,7 +26,8 @@
       "expo-router",
       "expo-status-bar",
       "expo-sqlite",
-      "./plugins/with-own-signing-key"
+      "./plugins/with-own-signing-key",
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true
