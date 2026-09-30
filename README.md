@@ -6,15 +6,25 @@ plan on the calendar, offline, in step with the desktop.
 - **Calendar** — Day, Week and Month, drawn like the desktop's: time windows as
   coloured bands, committed blocks in their window's colour, your Google
   events, vacations, the now line.
-- **Tick work off** — tap a block and tick its tasks; progress and task status
-  follow the same rule as on the desktop.
-- **Event marks** — important (★ in Month), placeholder (planning may use the
-  time), hide; hide whole calendars.
+- **Plan** — **Plan calendar** lays every task into its window from today on,
+  **Reschedule…** moves what no longer fits after the calendar changed, and
+  the drafts are **committed to Google** or discarded — the desktop's planner,
+  running the same code.
+- **My day** — review yesterday, the reviews still due, what today rolls up
+  to, generate → commit the day, tick blocks off, pull a backlog task in.
+- **Blocks** — tick work off, **Move…** (pinned there, its Google event
+  follows), unpin, delete; progress and task status follow the desktop's rules.
+- **Events** — important (★ in Month), placeholder (planning may use the
+  time), hide; hide whole calendars; delete from Google Calendar.
 - **Offline** — everything is in a local SQLite database; Google events are
   kept from the last read. Changes sync when the phone is online again.
 
-Planning (generate, commit, reschedule) stays on the desktop in this version;
-the planner already runs from the shared code, so it can follow.
+Both devices plan. So they never put the same work into Google twice, the
+phone **syncs with the desktop right before** it plans, reschedules or
+commits — and does none of them when that sync fails (offline, signed out).
+Drafts stay on the device that made them until committed. Still on the desktop
+only, for now: vacations, the Year/Month/Week planning screens and Tasks
+(coming next), and — by choice — CSV import and editing time windows.
 
 ## How it syncs
 
@@ -218,7 +228,9 @@ and commit the moved submodule.
 
 | Where | What |
 | --- | --- |
-| `src/app/` | Screens (Expo Router): calendar, item details, settings |
+| `src/app/` | Screens (Expo Router): calendar, item details, My day (`today.tsx`), Plan calendar (`plan.tsx`), settings |
+| `src/env.ts` | Core's `Env` on the phone: its database and Google Calendar through the sign-in — what core's planner, stores and operations run against |
+| `src/ui.tsx` | Shared building blocks: sections, buttons, checkboxes, progress bars, confirmations |
 | `src/calendar/` | Time grid, month grid, the calendar hook (core's `assembleCalendar`) |
 | `src/db/` | Database open/migrate (`database.ts`), reads, writes, the Google cache |
 | `src/google/` | Sign-in, Calendar API |

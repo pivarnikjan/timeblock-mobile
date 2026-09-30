@@ -21,6 +21,8 @@ export interface Account {
   name: string | null;
   /** Calendar and Drive app data were both granted. */
   complete: boolean;
+  /** Calendar access was granted (planning and committing need it; syncing needs Drive too). */
+  calendar: boolean;
 }
 
 export const SIGN_IN_AVAILABLE = true;
@@ -29,6 +31,7 @@ const toAccount = (u: User): Account => ({
   email: u.user.email,
   name: u.user.name,
   complete: grantsCalendar(u.scopes) && grantsDrive(u.scopes),
+  calendar: grantsCalendar(u.scopes),
 });
 
 let configured = false;

@@ -43,6 +43,8 @@ export default function RootLayout() {
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="item" options={{ presentation: 'modal', title: 'Details' }} />
         <Stack.Screen name="settings" options={{ title: 'Settings' }} />
+        <Stack.Screen name="today" options={{ title: 'My day' }} />
+        <Stack.Screen name="plan" options={{ title: 'Plan calendar' }} />
       </Stack>
     </AppProvider>
   );

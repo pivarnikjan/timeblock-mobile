@@ -103,16 +103,3 @@ export function vacationsBySourceEvent(): Map<string, Vacation> {
   const rows = database().orm.select().from(vacations).where(isNotNull(vacations.sourceEvent)).all();
   return new Map(rows.map((v) => [v.sourceEvent!, v]));
 }
-
-/** Minutes ticked off for these tasks, across every day. */
-export function tickedMinutes(taskIds: number[]): Map<number, number> {
-  if (taskIds.length === 0) return new Map();
-  const rows = database()
-    .orm.select({ taskId: blockSegments.taskId, minutes: blockSegments.minutes })
-    .from(blockSegments)
-    .where(and(isNotNull(blockSegments.doneAt), inArray(blockSegments.taskId, taskIds)))
-    .all();
-  const out = new Map<number, number>();
-  for (const r of rows) out.set(r.taskId, (out.get(r.taskId) ?? 0) + r.minutes);
-  return out;
-}

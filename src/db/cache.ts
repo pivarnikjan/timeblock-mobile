@@ -76,3 +76,16 @@ export function saveView(view: string): void {
 export function pruneEventCache(keepFrom: string): void {
   database().sqlite.runSync("DELETE FROM phone_cache WHERE key LIKE 'events:%' AND key < ?", [`events:${keepFrom}`]);
 }
+
+/** Drops one event from every cached day — after deleting it in Google, before the next read. */
+export function forgetEvent(calendarId: string, eventId: string): void {
+  const { sqlite } = database();
+  const rows = sqlite.getAllSync<{ key: string; value: string; saved_at: string }>("SELECT key, value, saved_at FROM phone_cache WHERE key LIKE 'events:%'");
+  sqlite.withTransactionSync(() => {
+    for (const row of rows) {
+      const events = JSON.parse(row.value) as CalendarEvent[];
+      const kept = events.filter((e) => !(e.calendarId === calendarId && e.id === eventId));
+      if (kept.length !== events.length) write(row.key, kept, row.saved_at);
+    }
+  });
+}

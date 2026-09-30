@@ -1,12 +1,20 @@
-import { Stack, useLocalSearchParams } from 'expo-router';
-import { Linking, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { useState } from 'react';
+import { Linking, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import type { CalendarItem } from '@timeblock/core/calendar/assemble';
 import { parseView } from '@timeblock/core/calendar/views';
+import { deleteBlock, moveBlockTo, tick, unpinBlock } from '@timeblock/core/operations/plan';
+import { deleteGoogleEvent } from '@timeblock/core/operations/vacation';
+import { setMark } from '@timeblock/core/store/event-marks';
 import { useCalendar } from '@/calendar/use-calendar';
-import { hideEvent, setMark, setSegmentsDone, showEvent } from '@/db/mutations';
+import { forgetEvent } from '@/db/cache';
+import { hideEvent, showEvent } from '@/db/mutations';
+import { env } from '@/env';
 import { minutesLabel } from '@/format';
 import { useApp } from '@/state/app';
 import { useTheme, type Theme } from '@/theme';
+import { Button, confirm, Note } from '@/ui';
 
 /** One calendar item in full: a block's work to tick off, an event's marks, a vacation's span. */
 export default function ItemScreen() {
@@ -60,17 +68,78 @@ function whenLabel(item: CalendarItem): string {
 }
 
 const STATE_LABEL = {
-  draft: 'Draft — planned on the desktop, not yet in Google Calendar',
+  draft: 'Draft — not yet in Google Calendar (commit it from Plan or My day)',
   synced: 'In Google Calendar',
   done: 'Done',
 } as const;
 
+/**
+ * Asks for a day, then a start time (Android's own pickers), in the wall-clock
+ * time of the Settings timezone — which the pickers show as if it were the
+ * phone's. Resolves to `YYYY-MM-DD` and `HH:mm`, or null when cancelled.
+ */
+function pickDayAndTime(start: CalendarItem['start']): Promise<{ date: string; time: string } | null> {
+  const initial = new Date(start.year, start.month - 1, start.day, start.hour, start.minute);
+  return new Promise((resolve) => {
+    DateTimePickerAndroid.open({
+      value: initial,
+      mode: 'date',
+      onChange: (event, day) => {
+        if (event.type !== 'set' || !day) return resolve(null);
+        DateTimePickerAndroid.open({
+          value: new Date(day.getFullYear(), day.getMonth(), day.getDate(), start.hour, start.minute),
+          mode: 'time',
+          is24Hour: true,
+          minuteInterval: 5,
+          onChange: (timeEvent, time) => {
+            if (timeEvent.type !== 'set' || !time) return resolve(null);
+            const pad = (n: number) => String(n).padStart(2, '0');
+            resolve({
+              date: `${time.getFullYear()}-${pad(time.getMonth() + 1)}-${pad(time.getDate())}`,
+              time: `${pad(time.getHours())}:${pad(time.getMinutes())}`,
+            });
+          },
+        });
+      },
+    });
+  });
+}
+
 function BlockDetails({ item, theme }: { item: CalendarItem; theme: Theme }) {
   const { changed } = useApp();
+  const router = useRouter();
+  const [busy, setBusy] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
   const open = item.segments.filter((s) => !s.done).map((s) => s.id);
-  const tick = (ids: number[], done: boolean) => {
-    setSegmentsDone(ids, done);
-    changed();
+  const blockId = item.blockId!;
+
+  const act = async (label: string, work: () => Promise<void>, leave = false) => {
+    setBusy(label);
+    setProblem(null);
+    try {
+      await work();
+      changed();
+      if (leave) router.back();
+    } catch (error) {
+      setProblem((error as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const move = async () => {
+    const picked = await pickDayAndTime(item.start);
+    if (picked) await act('move', () => moveBlockTo(env(), blockId, picked.date, picked.time), true);
+  };
+
+  const remove = async () => {
+    const inGoogle = item.blockState === 'synced';
+    const ok = await confirm(
+      'Delete this block?',
+      `${inGoogle ? 'Its Google Calendar event is deleted too. ' : ''}Its tasks are planned again next time.`,
+      'Delete',
+    );
+    if (ok) await act('delete', () => deleteBlock(env(), blockId), true);
   };
 
   return (
@@ -82,7 +151,7 @@ function BlockDetails({ item, theme }: { item: CalendarItem; theme: Theme }) {
       {item.segments.map((s) => (
         <Pressable
           key={s.id}
-          onPress={() => tick([s.id], !s.done)}
+          onPress={() => act(`tick-${s.id}`, () => tick(env(), [s.id], !s.done))}
           style={[styles.segment, { borderColor: theme.border, backgroundColor: theme.surface }]}
           accessibilityRole="checkbox"
           accessibilityState={{ checked: s.done }}
@@ -97,24 +166,58 @@ function BlockDetails({ item, theme }: { item: CalendarItem; theme: Theme }) {
         </Pressable>
       ))}
 
-      {open.length > 1 && (
-        <Pressable onPress={() => tick(open, true)} style={[styles.button, { backgroundColor: theme.accent }]} accessibilityRole="button">
-          <Text style={styles.buttonText}>Mark all done</Text>
-        </Pressable>
-      )}
+      {open.length > 1 && <Button label="Mark all done" primary busy={busy === 'all'} onPress={() => act('all', () => tick(env(), open, true))} />}
       <Text style={[styles.note, { color: theme.muted }]}>
         Ticking work off moves its goals&apos; progress; a task is done once its ticked time reaches its estimate. It reaches the desktop with the next sync.
       </Text>
+
+      {item.movable && (
+        <>
+          <Text style={[styles.heading, { color: theme.foreground }]}>Adjust</Text>
+          {Platform.OS === 'android' && <Button label="Move…" busy={busy === 'move'} disabled={busy !== null} onPress={move} />}
+          {item.pinned && <Button label="Unpin" busy={busy === 'unpin'} disabled={busy !== null} onPress={() => act('unpin', () => unpinBlock(env(), blockId))} />}
+          <Button label="Delete block" danger busy={busy === 'delete'} disabled={busy !== null} onPress={remove} />
+          <Note>
+            A block you move is pinned (📌): the next plan works around it. Unpin hands it back to the planner.{' '}
+            {item.blockState === 'synced' ? 'Its Google Calendar event follows.' : ''}
+          </Note>
+        </>
+      )}
+      {problem && <Note tone="bad">{problem}</Note>}
     </View>
   );
 }
 
 function EventDetails({ item, theme }: { item: CalendarItem; theme: Theme }) {
   const { changed } = useApp();
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
   const key = item.hideKey!;
-  const toggle = (field: 'important' | 'placeholder', on: boolean) => {
-    setMark(key, item.title, field, on);
+  const toggle = async (field: 'important' | 'placeholder', on: boolean) => {
+    await setMark(env().db, key, item.title, field, on);
     changed();
+  };
+
+  const remove = async () => {
+    const ok = await confirm(
+      'Delete from Google Calendar?',
+      item.recurring ? 'Only this occurrence is deleted; the rest of the series stays.' : `“${item.title}” is deleted from ${item.calendarName ?? 'Google Calendar'}.`,
+      'Delete',
+    );
+    if (!ok) return;
+    setBusy(true);
+    setProblem(null);
+    try {
+      await deleteGoogleEvent(env(), item.calendarId!, item.eventId!);
+      forgetEvent(item.calendarId!, item.eventId!);
+      changed();
+      router.back();
+    } catch (error) {
+      setProblem((error as Error).message);
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -130,14 +233,14 @@ function EventDetails({ item, theme }: { item: CalendarItem; theme: Theme }) {
         label="★ Important in Month view"
         hint="Always shown in Month, starred and in bold."
         value={item.important}
-        onChange={(on) => toggle('important', on)}
+        onChange={(on) => void toggle('important', on)}
       />
       <Row
         theme={theme}
         label="Placeholder"
         hint="Time held, not taken: planning may schedule work during it."
         value={item.placeholder}
-        onChange={(on) => toggle('placeholder', on)}
+        onChange={(on) => void toggle('placeholder', on)}
       />
       <Row
         theme={theme}
@@ -156,6 +259,14 @@ function EventDetails({ item, theme }: { item: CalendarItem; theme: Theme }) {
           <Text style={[styles.buttonText, { color: theme.accent }]}>Open in Google Calendar</Text>
         </Pressable>
       )}
+      {item.eventId && item.calendarId && (
+        item.writable ? (
+          <Button label="Delete from Google Calendar" danger busy={busy} onPress={remove} />
+        ) : (
+          <Note>This calendar is read-only for you, so the event cannot be deleted here.</Note>
+        )
+      )}
+      {problem && <Note tone="bad">{problem}</Note>}
     </View>
   );
 }

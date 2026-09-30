@@ -1,4 +1,4 @@
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -34,6 +34,17 @@ export default function CalendarScreen() {
   const [anchor, setAnchor] = useState(() => nowIn(zone).toISODate()!);
   const { layout, problem, eventsReadAt, loading, refresh } = useCalendar(view, anchor);
 
+  // Other screens open the calendar at a day ("Review from Mon 5 Oct →"): taken over once per request.
+  const params = useLocalSearchParams<{ date?: string; view?: string }>();
+  const request = params.date ? `${params.date}|${params.view ?? ''}` : null;
+  const [handled, setHandled] = useState<string | null>(null);
+  if (request !== null && request !== handled) {
+    setHandled(request);
+    setAnchor(params.date!);
+    const asked = parseView(params.view ?? null);
+    if (asked && asked !== 'workweek') setView(asked);
+  }
+
   const choose = (next: CalendarView) => {
     setView(next);
     saveView(next);
@@ -53,9 +64,17 @@ export default function CalendarScreen() {
           <Text style={[styles.title, { color: theme.foreground }]} numberOfLines={1}>
             {layout.range.title}
           </Text>
-          <Pressable onPress={() => router.push('/settings')} hitSlop={12} accessibilityRole="button" accessibilityLabel="Settings">
-            <Text style={[styles.gear, { color: theme.muted }]}>⚙</Text>
-          </Pressable>
+          <View style={styles.actions}>
+            <Pressable onPress={() => router.push('/today')} hitSlop={8} accessibilityRole="button" style={[styles.action, { borderColor: theme.border }]}>
+              <Text style={[styles.actionText, { color: theme.foreground }]}>My day</Text>
+            </Pressable>
+            <Pressable onPress={() => router.push('/plan')} hitSlop={8} accessibilityRole="button" style={[styles.action, { backgroundColor: theme.accent, borderColor: theme.accent }]}>
+              <Text style={[styles.actionText, { color: '#fff' }]}>Plan</Text>
+            </Pressable>
+            <Pressable onPress={() => router.push('/settings')} hitSlop={12} accessibilityRole="button" accessibilityLabel="Settings">
+              <Text style={[styles.gear, { color: theme.muted }]}>⚙</Text>
+            </Pressable>
+          </View>
         </View>
 
         <View style={styles.controls}>
@@ -132,6 +151,9 @@ const styles = StyleSheet.create({
   titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   title: { fontSize: 20, fontWeight: '700', flexShrink: 1 },
   gear: { fontSize: 22 },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  action: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
+  actionText: { fontSize: 13, fontWeight: '700' },
   controls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   nav: { flexDirection: 'row', gap: 6 },
   navButton: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, minWidth: 36, alignItems: 'center' },
