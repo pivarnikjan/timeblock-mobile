@@ -27,6 +27,10 @@ plan on the calendar, offline, in step with the desktop.
   optionally shown in Google Calendar); see what is scheduled during it and
   delete what you pick; answer "is it a vacation?" for multi-day events, and
   move a vacation with its event when that moved in Google.
+- **Settings** (tab) — Google sign-in, sync with the desktop, the hours the
+  calendar shows, time windows in front, only multi-day events in Month, which
+  calendars and hidden events are shown; the day shape and time windows the
+  planner uses, read-only (they are edited on the desktop).
 - **Offline** — everything is in a local SQLite database; Google events are
   kept from the last read. Changes sync when the phone is online again.
 
