@@ -149,3 +149,16 @@ and commit the moved submodule.
 | `src/google/` | Sign-in, Calendar API |
 | `src/sync/` | Sync with the desktop (core's `syncWithDrive`) |
 | `scripts/` | Browser preview; a fix for expo-sqlite's web build |
+
+## License
+
+[PolyForm Noncommercial 1.0.0](LICENSE.md). Free for personal use, study,
+research, hobby projects, and noncommercial organisations (charities, schools,
+public bodies). It includes the desktop repository's `packages/core` (through `vendor/timeblock`), which is under the same license.
+
+**Commercial use** — using it in or for a company, or building on it for
+profit — needs a separate commercial license. To get one, contact the author
+through [GitHub](https://github.com/pivarnikjan).
+
+Contributions can only be accepted with an agreement that lets the author
+license them the same way; please ask before opening a pull request.
