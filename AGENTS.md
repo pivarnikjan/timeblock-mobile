@@ -37,6 +37,12 @@ server) or `scripts\deploy.ps1 -Release` (JavaScript inside the APK) builds and 
 connected phone through `npx expo run:android`. The project must sit at a path of 40 characters or
 fewer (ninja's 260-character limit). Guide: `docs/deploy-android.md`.
 
+Builds are signed with the user's own key (`%USERPROFILE%\.timeblock\timeblock-release.p12`, made by
+`scripts\deploy.ps1 -NewKey`), not React Native's shared debug key: `plugins/with-own-signing-key.js`
+adds the signing config to the generated `build.gradle`, and `deploy.ps1` passes the key as Gradle
+properties for each build. Never commit the key or its password, and never switch signing back to
+the debug key — an app installed with one key can't be updated by a build signed with another.
+
 ## Rules
 
 - If `ios/` and `android/` directories do not exist, they are generated (Continuous Native Generation). Never create or edit them by hand — configure native behavior in `app.json` and config plugins.

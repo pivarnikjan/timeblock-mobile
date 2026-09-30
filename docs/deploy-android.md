@@ -7,10 +7,11 @@ rebuild takes a few minutes.
 | | When |
 | --- | --- |
 | [Before you start](#before-you-start) | Once per computer |
+| [Your signing key](#your-signing-key) | Once, then keep it backed up |
 | [Step 1](#step-1--turn-on-developer-options-on-the-phone) | Once per phone |
 | [Step 2](#step-2--connect-the-phone) | Each time you deploy (Wi-Fi) or once (USB) |
 | [Step 3](#step-3--build-and-install) | Each time you deploy |
-| [Step 4](#step-4--let-google-sign-in-accept-this-build) | Once, and again if `android\` is regenerated |
+| [Step 4](#step-4--let-google-sign-in-accept-this-build) | Once per signing key |
 | [Step 5](#step-5--sign-in-on-the-phone) | Once per install |
 
 ---
@@ -101,6 +102,50 @@ install.
 > firewall HTTPS inspection makes the SDK manager and Gradle fail to download
 > anything. Java prints `Picked up JAVA_TOOL_OPTIONS…` when it starts; that
 > line is harmless.
+
+## Your signing key
+
+Android only installs an update if it's signed with the same key as the
+installed app, and Google sign-in trusts a build by its key's SHA-1. React
+Native's template signs with a **debug key that every React Native project
+shares**, so anyone could sign an APK that Android accepts as an update to your
+TimeBlock. So builds here are signed with **your own key** instead:
+
+- PKCS12, RSA 4096, signed with SHA256withRSA.
+- Kept outside the project, at `%USERPROFILE%\.timeblock\timeblock-release.p12`.
+  To use another place, set the `TIMEBLOCK_KEYSTORE` environment variable to
+  its path.
+- Its password is saved beside it as `timeblock-release.p12.password`,
+  encrypted with Windows (DPAPI) so that only your Windows account on this
+  computer can read it. Deploys don't ask for it.
+- `plugins\with-own-signing-key.js` makes every generated `android\` sign both
+  debug and release builds with it. `deploy.ps1` passes the key to Gradle for
+  each build and refuses to build without it.
+
+**Create it once:**
+
+```powershell
+.\scripts\deploy.ps1 -NewKey
+```
+
+It asks for a password (at least 8 characters, typed twice), creates the key,
+and prints its SHA-1 for step 4. It never replaces an existing key.
+
+**Back it up now.** Copy `timeblock-release.p12` somewhere safe outside this
+computer, and keep the password in your password manager. The `.password` file
+is no use elsewhere: it only opens for this Windows account. If you lose the key
+or its password, the installed app can't be updated any more. You'd have to
+uninstall it, make a new key, and register the new SHA-1. Your plan comes back
+from sync, but anything not yet synced is lost.
+
+**On another computer or Windows account,** copy the `.p12` to the same place,
+then save its password for that account:
+
+```powershell
+Read-Host -AsSecureString 'Key password' | ConvertFrom-SecureString | Set-Content "$HOME\.timeblock\timeblock-release.p12.password"
+```
+
+`.\scripts\deploy.ps1 -Sha1` prints the key's SHA-1 whenever you need it.
 
 ## Step 1 — Turn on developer options on the phone
 
@@ -209,18 +254,14 @@ installs over the other and keeps the app's data.
 ## Step 4 — Let Google sign-in accept this build
 
 Google sign-in on Android only works for a build whose **package name +
-signing certificate** Google knows. Builds made here are signed with the
-**debug keystore** in `android\app\debug.keystore`, both debug and release
-variants, so Google needs that certificate.
-
-Read its SHA-1. `keytool` comes with the JDK; the store and key passwords of
-the debug keystore are the well-known `android`:
+signing certificate** Google knows. Builds made here are signed with your key
+(*Your signing key*). Print its SHA-1:
 
 ```powershell
-keytool -list -v -keystore android\app\debug.keystore -alias androiddebugkey -storepass android -keypass android
+.\scripts\deploy.ps1 -Sha1
 ```
 
-Copy the **SHA1:** line. Then, in <https://console.cloud.google.com/>, in the
+Then, in <https://console.cloud.google.com/>, in the
 **same project as the desktop** (the Drive folder belongs to that project):
 
 1. **Google Auth platform → Clients → Create client**
@@ -232,11 +273,13 @@ Copy the **SHA1:** line. Then, in <https://console.cloud.google.com/>, in the
 Google needs one Android client per signing certificate. It can take a few
 minutes to accept a new client.
 
-You do this once. Do it again only if `android\` is regenerated (deleted, or
-`npx expo prebuild --clean`) and the new keystore's SHA-1 differs.
+You do this once per key. Regenerating `android\` doesn't change the SHA-1,
+because the key lives outside it.
 
-> The debug keystore is a well-known one, meant for your own devices. Don't
-> share APKs signed with it.
+If you created an Android client earlier for React Native's shared debug key
+(SHA-1 `5E:8F:16:06:2E:A3:CD:2C:4A:0D:54:78:76:BA:A6:F3:8C:AB:F6:25`), delete
+it. Otherwise any APK signed with that public key and named
+`com.pivarnikjan.timeblock` is accepted by your Google client.
 
 ## Step 5 — Sign in on the phone
 
@@ -284,9 +327,10 @@ Reconnect the phone first if its Wireless debugging port changed (step 2,
 ## When Android refuses to update the app
 
 Android installs an update only if it is signed with the same key as the
-installed copy. If the installed copy came from somewhere else, such as an APK
-built on another computer with a different key, the install fails with
-`INSTALL_FAILED_UPDATE_INCOMPATIBLE`. To replace it:
+installed copy. If the installed copy has another key, the install fails with
+`INSTALL_FAILED_UPDATE_INCOMPATIBLE`. This happens once when you switch to your
+own key while a copy signed with the debug key is installed. It also happens
+with an APK built with a different key. To replace it:
 
 1. Open the installed app and pull to refresh, so everything it holds is
    synced.
@@ -305,6 +349,9 @@ built on another computer with a different key, the install fails with
 | `deploy.ps1 cannot be loaded because running scripts is disabled` | PowerShell's execution policy. | `powershell -ExecutionPolicy Bypass -File .\scripts\deploy.ps1 -Release` |
 | `Missing: JAVA_HOME … ANDROID_HOME … adb` | The terminal was opened before `-Install`, or `-Install` wasn't run. | Open a new terminal; otherwise run `.\scripts\deploy.ps1 -Install`. |
 | `No phone connected` | `adb devices` lists no `device`. | Step 2. On Wi-Fi, usually the connect port changed: `adb connect` again. |
+| `No signing key at …` | No key has been created, or `TIMEBLOCK_KEYSTORE` points elsewhere. | `.\scripts\deploy.ps1 -NewKey` (*Your signing key*), or copy your backed-up `.p12` there. |
+| `Can't read …\timeblock-release.p12.password` | The password file was saved by another Windows account or computer. | Save the password again (*Your signing key*, "On another computer"). |
+| `keytool could not read … is the saved password right?` | The saved password doesn't open the key. | Save the right password again (*Your signing key*). |
 | `PKIX path building failed` / `Failed to download any source lists` | Java doesn't trust your network's HTTPS inspection. | Run `-Install` again (it sets `JAVA_TOOL_OPTIONS`), then open a new terminal. |
 | `SDK location not found` | `ANDROID_HOME` isn't set in this terminal. | Open a new terminal. |
 | `This folder's path is … characters long` | The project is at a long path. | Move it to `C:\dev\timeblock-mobile` (*Before you start*). |
@@ -312,7 +359,7 @@ built on another computer with a different key, the install fails with
 | A native build step fails on Windows on Arm | An x64 SDK tool didn't run under emulation. | Run the build again; the first runs under emulation are the slowest. If it fails at the same step again, note which one. |
 | `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | The installed copy has a different signing key. | See *When Android refuses to update the app*. |
 | Debug build: red screen *Unable to load script* | The phone can't reach the dev server. | Keep the `deploy.ps1` terminal open. Allow Node.js through the Windows firewall on private networks. Put the phone and computer on the same Wi-Fi. |
-| Sign-in fails with `DEVELOPER_ERROR` (code 10) | Google doesn't know this package + SHA-1 pair. | Step 4, with the SHA-1 of the keystore that signed *this* build. Wait a few minutes after creating the client. |
+| Sign-in fails with `DEVELOPER_ERROR` (code 10) | Google doesn't know this package + SHA-1 pair. | Step 4, with the SHA-1 from `.\scripts\deploy.ps1 -Sha1`. Wait a few minutes after creating the client. |
 | *Google Drive access missing* | A box was left unticked on Google's screen. | **⚙ → Grant access**. |
 | Sync stops after a week | The Google Cloud app is in *Testing*, and Google expires sign-ins after 7 days. | Publish the app (desktop's `docs/google-calendar-setup.md`). |
 
