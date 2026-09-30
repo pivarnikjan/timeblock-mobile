@@ -8,16 +8,24 @@
   scripts\deploy.ps1 -Install   first-time setup: install everything Android SDK development needs
                                 (JDK 17, the SDK command-line tools, the SDK/NDK packages the app's
                                 build uses, ANDROID_HOME / JAVA_HOME / Path), then stop
+  scripts\deploy.ps1 -NewKey    create your own signing key (asks for its password), then stop
+  scripts\deploy.ps1 -Sha1      print your key's SHA-1, for the Google Android client, then stop
 
   -Install is safe to run again: whatever is already there is left alone. It is the scripted form of
   vendor\timeblock\docs\android-sdk.md. It asks you to accept Google's SDK licences.
+
+  Builds are signed with your own key (plugins\with-own-signing-key.js), not React Native's public
+  debug key. The key is %USERPROFILE%\.timeblock\timeblock-release.p12 (or $env:TIMEBLOCK_KEYSTORE);
+  its password is kept next to it, encrypted for your Windows account, so deploys don't ask for it.
 
   The whole route, from phone setup to Google sign-in: docs\deploy-android.md.
 #>
 [CmdletBinding()]
 param(
   [switch]$Install,
-  [switch]$Release
+  [switch]$Release,
+  [switch]$NewKey,
+  [switch]$Sha1
 )
 
 $ErrorActionPreference = 'Stop'
@@ -29,6 +37,98 @@ $cmdlineToolsUrl = 'https://dl.google.com/android/repository/commandlinetools-wi
 $sdk = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { Join-Path $env:LOCALAPPDATA 'Android\Sdk' }
 
 function Step($text) { Write-Host "`n==> $text" -ForegroundColor Cyan }
+
+# Your signing key: PKCS12, RSA 4096, SHA256withRSA, outside the repository. Its password is stored
+# beside it with Windows DPAPI (ConvertFrom-SecureString), readable only by this Windows account on
+# this computer - so keep your own copy of the password too (a password manager), with a backup of the
+# .p12 file. Losing either means the installed app can't be updated, only reinstalled.
+$keystore = if ($env:TIMEBLOCK_KEYSTORE) { $env:TIMEBLOCK_KEYSTORE } else { Join-Path $HOME '.timeblock\timeblock-release.p12' }
+$keyPasswordFile = "$keystore.password"
+$keyAlias = 'timeblock'
+
+function Get-Keytool {
+  if (-not $env:JAVA_HOME -or -not (Test-Path "$env:JAVA_HOME\bin\keytool.exe")) {
+    Write-Host 'JAVA_HOME is not set. Run  scripts\deploy.ps1 -Install  first, then open a new terminal.' -ForegroundColor Red
+    exit 1
+  }
+  return "$env:JAVA_HOME\bin\keytool.exe"
+}
+
+function ConvertTo-PlainText([Security.SecureString]$secure) {
+  $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+  try { return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
+  finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+}
+
+function Get-KeyPassword {
+  if (-not (Test-Path $keystore) -or -not (Test-Path $keyPasswordFile)) {
+    Write-Host "No signing key at $keystore." -ForegroundColor Red
+    Write-Host "Create one with  scripts\deploy.ps1 -NewKey  (see docs\deploy-android.md, 'Your signing key')," -ForegroundColor Red
+    Write-Host "or point TIMEBLOCK_KEYSTORE at an existing one and save its password file beside it." -ForegroundColor Red
+    exit 1
+  }
+  try {
+    return ConvertTo-PlainText (Get-Content $keyPasswordFile | ConvertTo-SecureString)
+  } catch {
+    Write-Host "Can't read $keyPasswordFile - it was saved by another Windows account or computer." -ForegroundColor Red
+    Write-Host 'Save the password again for this account:' -ForegroundColor Red
+    Write-Host "  Read-Host -AsSecureString 'Key password' | ConvertFrom-SecureString | Set-Content '$keyPasswordFile'" -ForegroundColor Red
+    exit 1
+  }
+}
+
+# keytool reads the password from an environment variable (-storepass:env), so it never appears on a
+# command line; the variable exists only while keytool runs. Its stderr (warnings, and Java's "Picked up
+# JAVA_TOOL_OPTIONS") is dropped; under 'Stop', Windows PowerShell would treat any stderr line as fatal.
+function Invoke-Keytool($password, [string[]]$arguments) {
+  $env:TIMEBLOCK_KEY_PASSWORD = $password
+  $ErrorActionPreference = 'Continue'
+  try {
+    & (Get-Keytool) @arguments -storepass:env TIMEBLOCK_KEY_PASSWORD 2>$null
+    if ($LASTEXITCODE -ne 0) { throw "keytool failed (exit $LASTEXITCODE)." }
+  } finally { Remove-Item Env:TIMEBLOCK_KEY_PASSWORD -ErrorAction SilentlyContinue }
+}
+
+function Show-KeySha1 {
+  $password = Get-KeyPassword
+  $line = Invoke-Keytool $password @('-list', '-v', '-storetype', 'PKCS12', '-keystore', $keystore, '-alias', $keyAlias) |
+    Select-String 'SHA1:' | Select-Object -First 1
+  if (-not $line) { throw "keytool could not read $keystore - is the saved password right?" }
+  Write-Host "Your key: $keystore"
+  Write-Host 'SHA-1 for the Google Android client (package com.pivarnikjan.timeblock):'
+  Write-Host ('  ' + ($line.Line -replace '^\s*SHA1:\s*', '')) -ForegroundColor Green
+}
+
+function New-SigningKey {
+  if (Test-Path $keystore) {
+    Write-Host "A key already exists at $keystore - not replacing it." -ForegroundColor Red
+    Write-Host 'A new key would stop the installed app from updating. To really start over, move that file away first.' -ForegroundColor Red
+    exit 1
+  }
+  Get-Keytool | Out-Null
+  Write-Host 'Choose a password for your signing key (at least 8 characters). Keep it in your password manager:'
+  Write-Host 'you need it to use the key on another computer or Windows account.'
+  $first = Read-Host -AsSecureString 'Key password'
+  $second = Read-Host -AsSecureString 'Same password again'
+  $password = ConvertTo-PlainText $first
+  if ($password -ne (ConvertTo-PlainText $second)) { throw 'The two passwords differ - nothing was created.' }
+  if ($password.Length -lt 8) { throw 'The password is shorter than 8 characters - nothing was created.' }
+
+  New-Item -ItemType Directory -Force (Split-Path -Parent $keystore) | Out-Null
+  Invoke-Keytool $password @('-genkeypair', '-storetype', 'PKCS12', '-keystore', $keystore, '-alias', $keyAlias,
+    '-keyalg', 'RSA', '-keysize', '4096', '-sigalg', 'SHA256withRSA', '-validity', '10000',
+    '-dname', 'CN=TimeBlock, O=pivarnikjan') | Out-Null
+  if (-not (Test-Path $keystore)) { throw 'keytool could not create the key.' }
+  $first | ConvertFrom-SecureString | Set-Content $keyPasswordFile
+
+  Write-Host "`nCreated $keystore" -ForegroundColor Green
+  Show-KeySha1
+  Write-Host "`nNext:" -ForegroundColor Green
+  Write-Host "  1. Back up $keystore (not the .password file - it only works for this account)."
+  Write-Host '  2. Register the SHA-1 above as a Google Android client (docs\deploy-android.md, step 4).'
+  Write-Host '  3. If TimeBlock is installed with the old debug key, sync it and uninstall it once:'
+  Write-Host '       adb uninstall com.pivarnikjan.timeblock'
+}
 
 # The SDK's CMake 3.22.1 ships ninja 1.10, which cannot open paths over 260 characters - Windows'
 # LongPathsEnabled does not help it. The native build reaches files such as
@@ -184,8 +284,9 @@ function Install-Everything {
     if ($LASTEXITCODE -ne 0) { throw 'npm install failed.' }
   } finally { Pop-Location }
 
-  Write-Host "`nDone. Open a NEW terminal so the environment variables apply, connect the phone" -ForegroundColor Green
-  Write-Host "(USB debugging or Wireless debugging - see docs\deploy-android.md, steps 1-2), then run:" -ForegroundColor Green
+  Write-Host "`nDone. Open a NEW terminal so the environment variables apply, create your signing key once," -ForegroundColor Green
+  Write-Host "connect the phone (docs\deploy-android.md, steps 1-2), and deploy:" -ForegroundColor Green
+  Write-Host "  scripts\deploy.ps1 -NewKey" -ForegroundColor Green
   Write-Host "  scripts\deploy.ps1 -Release" -ForegroundColor Green
 }
 
@@ -201,6 +302,7 @@ function Deploy {
     exit 1
   }
   if (-not (Test-ShortRoot)) { exit 1 }
+  $keyPassword = Get-KeyPassword
 
   Push-Location $root
   try {
@@ -217,6 +319,15 @@ function Deploy {
     $abi = (adb -s $serial shell getprop ro.product.cpu.abi).Trim()
     Write-Host "Phone: $model ($serial, $abi)"
 
+    # An android\ folder generated before plugins\with-own-signing-key.js existed would still sign with
+    # the debug key; prebuild (without --clean) re-applies the config plugins to it.
+    $gradleFile = 'android\app\build.gradle'
+    if ((Test-Path $gradleFile) -and -not (Select-String -Path $gradleFile -Pattern '@generated timeblock-signing' -Quiet)) {
+      Step 'Applying the signing setup to android\'
+      npx expo prebuild --platform android --no-install
+      if ($LASTEXITCODE -ne 0) { throw 'expo prebuild failed.' }
+    }
+
     Step ("Building and installing the " + $(if ($Release) { 'release' } else { 'debug' }) + ' build')
     $variant = if ($Release) { 'release' } else { 'debug' }
     # Expo compiles a debug build for the phone's CPU only, but a release build for all four Android
@@ -224,14 +335,28 @@ function Deploy {
     # only (Gradle reads ORG_GRADLE_PROJECT_* variables as project properties).
     $previousArchs = $env:ORG_GRADLE_PROJECT_reactNativeArchitectures
     if ($Release -and $abi) { $env:ORG_GRADLE_PROJECT_reactNativeArchitectures = $abi }
+    # Both variants sign with your key, so either installs over the other. The key reaches Gradle as
+    # project properties for this run only.
+    $env:ORG_GRADLE_PROJECT_timeblockKeystore = $keystore
+    $env:ORG_GRADLE_PROJECT_timeblockKeystorePassword = $keyPassword
     # A release build carries its JavaScript inside the APK, so it needs no dev server.
     $runArgs = @('expo', 'run:android', '--variant', $variant)
     if ($Release) { $runArgs += '--no-bundler' }
     try {
       npx @runArgs
-      if ($LASTEXITCODE -ne 0) { throw 'The build failed.' }
-    } finally { $env:ORG_GRADLE_PROJECT_reactNativeArchitectures = $previousArchs }
+      if ($LASTEXITCODE -ne 0) {
+        Write-Host 'If it says INSTALL_FAILED_UPDATE_INCOMPATIBLE, the installed TimeBlock has another key:' -ForegroundColor Yellow
+        Write-Host 'sync it, run  adb uninstall com.pivarnikjan.timeblock , and deploy again.' -ForegroundColor Yellow
+        throw 'The build or install failed.'
+      }
+    } finally {
+      $env:ORG_GRADLE_PROJECT_reactNativeArchitectures = $previousArchs
+      Remove-Item Env:ORG_GRADLE_PROJECT_timeblockKeystore, Env:ORG_GRADLE_PROJECT_timeblockKeystorePassword -ErrorAction SilentlyContinue
+    }
   } finally { Pop-Location }
 }
 
-if ($Install) { Install-Everything } else { Deploy }
+if ($Install) { Install-Everything }
+elseif ($NewKey) { New-SigningKey }
+elseif ($Sha1) { Show-KeySha1 }
+else { Deploy }

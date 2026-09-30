@@ -58,39 +58,50 @@ It installs Java 17 and the Android SDK, sets the environment variables, and
 runs `npm install`. It asks you to accept Google's licences. Then open a new
 terminal.
 
-**3. Connect the phone.** Turn on **USB debugging** in its developer options,
+**3. Create your signing key (once).** Builds are signed with your own key,
+not React Native's debug key, which every project shares:
+
+```powershell
+.\scripts\deploy.ps1 -NewKey
+```
+
+It asks for a password and saves the key as
+`%USERPROFILE%\.timeblock\timeblock-release.p12`. The password is kept beside
+it, encrypted for your Windows account, so deploys don't ask for it. **Back up
+the `.p12` file and keep the password in your password manager.** Without them
+the installed app can't be updated, only reinstalled. Details: the guide's
+[Your signing key](docs/deploy-android.md#your-signing-key).
+
+**4. Connect the phone.** Turn on **USB debugging** in its developer options,
 then plug it in or pair it over Wi-Fi. `adb devices` should list it as
 `device`. For the phone used here, see *The motorola edge 70 fusion* below.
 
-**4. Build and install:**
+**5. Build and install:**
 
 ```powershell
 .\scripts\deploy.ps1 -Release
 ```
 
 This builds the app and installs it on the phone. The first build takes a
-while.
+while. If a copy signed with another key is installed, the install fails with
+`INSTALL_FAILED_UPDATE_INCOMPATIBLE`. Sync that copy, run
+`adb uninstall com.pivarnikjan.timeblock` once, and deploy again.
 
-**5. Let Google recognise the app.** Android sign-in is tied to the app's
-package name and signing certificate. Builds made here are signed with the
-debug keystore that the build generates. Read its SHA-1 (`keytool` comes with
-the JDK):
+**6. Let Google recognise the app.** Android sign-in is tied to the app's
+package name and signing certificate. Print your key's SHA-1:
 
 ```powershell
-keytool -list -v -keystore android\app\debug.keystore -alias androiddebugkey -storepass android -keypass android 2>$null | Select-String 'SHA1:'
+.\scripts\deploy.ps1 -Sha1
 ```
-
-It prints only the `SHA1:` line. The `2>$null` hides two warnings that
-`keytool` otherwise prints; they're explained in the guide, step 4, and don't
-need any action.
 
 Then, in <https://console.cloud.google.com/>, **in the same project as the
 desktop** (the Drive folder belongs to the project): **Google Auth platform →
 Clients → Create client → Android**. Enter package name
 `com.pivarnikjan.timeblock`, paste the SHA-1, and click **Create**. There is no
-secret to copy.
+secret to copy. If there's an Android client for the shared debug key's SHA-1
+(`5E:8F:16:…:F6:25`), delete it.
 
-**6. Sign in.** Open TimeBlock → **⚙ → Sign in with Google** with the
+**7. Sign in.** Open TimeBlock → **⚙ → Sign in with Google** with the
 desktop's account. On Google's screen, allow both calendar access and *See,
 create, and delete its own configuration data in your Google Drive*. The
 desktop's plan arrives with the first sync.
@@ -160,7 +171,7 @@ Build and connection problems: the guide's
 
 | What you see | Why | Do this |
 | --- | --- | --- |
-| Sign-in fails with `DEVELOPER_ERROR` (code 10) | Google does not know this package + SHA-1 pair. | Check step 5: the Android client's package name and the SHA-1 of the keystore that signed *this* build. If `android\` was regenerated, its keystore and SHA-1 may be new. |
+| Sign-in fails with `DEVELOPER_ERROR` (code 10) | Google does not know this package + SHA-1 pair. | Check step 6: the Android client's package name, and the SHA-1 from `.\scripts\deploy.ps1 -Sha1`. Wait a few minutes after creating the client. |
 | *Google Drive access missing* | A box was left unticked on Google's screen. | **⚙ → Grant access**. |
 | *The Google Drive API is not enabled* | Step 0. | Enable it for the project, then pull to refresh. |
 | Sync stops after a week | The Google Cloud app is in *Testing*: Google expires sign-ins after 7 days. | Publish the app (desktop's `docs/google-calendar-setup.md`). |
@@ -213,6 +224,7 @@ and commit the moved submodule.
 | `src/google/` | Sign-in, Calendar API |
 | `src/sync/` | Sync with the desktop (core's `syncWithDrive`) |
 | `scripts/` | Local Android build and install (`deploy.ps1`); browser preview; a fix for expo-sqlite's web build |
+| `plugins/` | Config plugin that signs builds with your own key (`with-own-signing-key.js`) |
 | `docs/` | [Deploying to your phone](docs/deploy-android.md) |
 
 ## License
