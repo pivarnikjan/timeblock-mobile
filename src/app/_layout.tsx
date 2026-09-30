@@ -40,13 +40,14 @@ export default function RootLayout() {
           contentStyle: { backgroundColor: theme.background },
         }}
       >
-        <Stack.Screen name="index" options={{ headerShown: false }} />
+        <Stack.Screen name="(tabs)" options={{ headerShown: false, title: 'TimeBlock' }} />
         <Stack.Screen name="item" options={{ presentation: 'modal', title: 'Details' }} />
-        <Stack.Screen name="settings" options={{ title: 'Settings' }} />
         <Stack.Screen name="today" options={{ title: 'My day' }} />
         <Stack.Screen name="plan" options={{ title: 'Plan calendar' }} />
         <Stack.Screen name="vacations" options={{ title: 'Vacations' }} />
         <Stack.Screen name="vacation" options={{ presentation: 'modal', title: 'Set vacation' }} />
+        <Stack.Screen name="horizon" options={{ presentation: 'modal', title: 'Goal' }} />
+        <Stack.Screen name="task" options={{ presentation: 'modal', title: 'Task' }} />
       </Stack>
     </AppProvider>
   );

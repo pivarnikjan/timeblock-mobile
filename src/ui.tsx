@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react';
-import { ActivityIndicator, Alert, Platform, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { useState, type ReactNode } from 'react';
+import { ActivityIndicator, Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View, type TextInputProps } from 'react-native';
 import { formatMinutes, type Progress } from '@timeblock/core/hierarchy';
 import { useTheme, type Theme } from '@/theme';
 
@@ -164,6 +164,126 @@ export function ProgressBar({ progress, compact }: { progress: Progress | undefi
   );
 }
 
+/** A labelled form field. */
+export function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
+  const theme = useTheme();
+  return (
+    <View style={{ gap: 4 }}>
+      <Text style={[ui.label, { color: theme.muted }]}>{label}</Text>
+      {children}
+      {hint && <Text style={[ui.note, { color: theme.muted }]}>{hint}</Text>}
+    </View>
+  );
+}
+
+/** A text input in the app's look. */
+export function TextField(props: TextInputProps) {
+  const theme = useTheme();
+  return (
+    <TextInput
+      placeholderTextColor={theme.muted}
+      {...props}
+      style={[ui.input, { color: theme.foreground, borderColor: theme.border, backgroundColor: theme.background }, props.style]}
+    />
+  );
+}
+
+export interface ChoiceOption<T> {
+  value: T;
+  label: string;
+  /** Options with a group are listed under its heading. */
+  group?: string;
+  detail?: string;
+}
+
+/**
+ * A select: shows the chosen option; tapping it lists the options (grouped
+ * under headings when they have groups) and picks one.
+ */
+export function Choice<T>({
+  value,
+  options,
+  onChange,
+  placeholder = 'Choose…',
+  title,
+}: {
+  value: T | undefined;
+  options: ChoiceOption<T>[];
+  onChange(value: T): void;
+  placeholder?: string;
+  title?: string;
+}) {
+  const theme = useTheme();
+  const [open, setOpen] = useState(false);
+  const chosen = options.find((o) => o.value === value);
+  const groups = [...new Set(options.map((o) => o.group ?? ''))];
+  return (
+    <>
+      <Pressable
+        onPress={() => setOpen(true)}
+        accessibilityRole="button"
+        style={[ui.input, ui.inline, { borderColor: theme.border, backgroundColor: theme.background }]}
+      >
+        <Text style={[ui.text, { flex: 1, color: chosen ? theme.foreground : theme.muted }]} numberOfLines={2}>
+          {chosen?.label ?? placeholder}
+        </Text>
+        <Text style={{ color: theme.muted }}>▾</Text>
+      </Pressable>
+      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+        <Pressable style={ui.backdrop} onPress={() => setOpen(false)}>
+          <Pressable style={[ui.sheet, { backgroundColor: theme.surface, borderColor: theme.border }]} onPress={() => undefined}>
+            {title && <Text style={[ui.sectionTitle, { color: theme.foreground }]}>{title}</Text>}
+            <ScrollView style={{ maxHeight: 460 }}>
+              {groups.map((group) => (
+                <View key={group}>
+                  {group !== '' && <Text style={[ui.label, { color: theme.muted, marginTop: 10, marginBottom: 2 }]}>{group}</Text>}
+                  {options
+                    .filter((o) => (o.group ?? '') === group)
+                    .map((o) => (
+                      <Pressable
+                        key={String(o.value)}
+                        onPress={() => {
+                          onChange(o.value);
+                          setOpen(false);
+                        }}
+                        style={({ pressed }) => [ui.option, { backgroundColor: o.value === value ? theme.background : pressed ? theme.border : 'transparent' }]}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: o.value === value }}
+                      >
+                        <Text style={[ui.text, { color: theme.foreground, fontWeight: o.value === value ? '700' : '400' }]}>{o.label}</Text>
+                        {o.detail && <Text style={[ui.note, { color: theme.muted }]}>{o.detail}</Text>}
+                      </Pressable>
+                    ))}
+                </View>
+              ))}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </>
+  );
+}
+
+/** A row of buttons of which one is on — a status, a view. */
+export function Segments<T extends string>({ value, options, onChange }: { value: T; options: { value: T; label: string }[]; onChange(value: T): void }) {
+  const theme = useTheme();
+  return (
+    <View style={[ui.segments, { borderColor: theme.border }]}>
+      {options.map((o) => (
+        <Pressable
+          key={o.value}
+          onPress={() => onChange(o.value)}
+          style={[ui.segment, o.value === value && { backgroundColor: theme.accent }]}
+          accessibilityRole="button"
+          accessibilityState={{ selected: o.value === value }}
+        >
+          <Text style={[ui.segmentText, { color: o.value === value ? '#fff' : theme.foreground }]}>{o.label}</Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
 /** Asks before something that cannot be undone; resolves true on the confirming button. */
 export function confirm(title: string, message: string, action: string, destructive = true): Promise<boolean> {
   // react-native-web has no Alert; the browser preview asks the browser's way.
@@ -201,4 +321,10 @@ export const ui = StyleSheet.create({
   chip: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 7, paddingVertical: 1 },
   chipText: { fontSize: 11, fontWeight: '600' },
   bar: { height: 6, borderRadius: 3, overflow: 'hidden' },
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', padding: 20 },
+  sheet: { borderWidth: 1, borderRadius: 14, padding: 14, gap: 6 },
+  option: { paddingVertical: 10, paddingHorizontal: 8, borderRadius: 8 },
+  segments: { flexDirection: 'row', borderWidth: 1, borderRadius: 8, overflow: 'hidden', alignSelf: 'flex-start' },
+  segment: { paddingHorizontal: 12, paddingVertical: 7 },
+  segmentText: { fontSize: 13, fontWeight: '600' },
 });

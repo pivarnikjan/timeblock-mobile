@@ -44,3 +44,18 @@ export function pickDayAndTime(initial: LocalMoment, options: { minuteInterval?:
     });
   });
 }
+
+/** Asks for a day (Android's date picker); resolves to `YYYY-MM-DD`, or null when cancelled. */
+export function pickDate(initial: string): Promise<string | null> {
+  const [y, m, d] = initial.split('-').map(Number);
+  return new Promise((resolve) => {
+    DateTimePickerAndroid.open({
+      value: new Date(y, m - 1, d),
+      mode: 'date',
+      onChange: (event, day) => {
+        if (event.type !== 'set' || !day) return resolve(null);
+        resolve(`${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`);
+      },
+    });
+  });
+}

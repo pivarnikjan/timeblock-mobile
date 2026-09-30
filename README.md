@@ -16,6 +16,13 @@ plan on the calendar, offline, in step with the desktop.
   follows), unpin, delete; progress and task status follow the desktop's rules.
 - **Events** — important (★ in Month), placeholder (planning may use the
   time), hide; hide whole calendars; delete from Google Calendar.
+- **Planning** (tab) — the Year, Month and Week screens: goals, outcomes and
+  priorities with progress and forecast, drilled down to their tasks; add,
+  edit, mark done or drop them; move month backlog into a week; quick-add
+  ("title + 1h 25m"); what is not connected to anything.
+- **Tasks** (tab) — capture and edit tasks (estimate, priority, energy, due
+  date, the goal it serves, time window, sequential session), change their
+  status, reopen done ones.
 - **Vacations** (🏖) — set, edit or delete one (the windows it closes, a note,
   optionally shown in Google Calendar); see what is scheduled during it and
   delete what you pick; answer "is it a vacation?" for multi-day events, and
@@ -26,9 +33,8 @@ plan on the calendar, offline, in step with the desktop.
 Both devices plan. So they never put the same work into Google twice, the
 phone **syncs with the desktop right before** it plans, reschedules or
 commits — and does none of them when that sync fails (offline, signed out).
-Drafts stay on the device that made them until committed. Still on the desktop
-only, for now: the Year/Month/Week planning screens and Tasks (coming next),
-and — by choice — CSV import and editing time windows.
+Drafts stay on the device that made them until committed. Desktop only, by
+choice: CSV import and editing time windows, lunch and block sizes.
 
 ## How it syncs
 
@@ -232,7 +238,8 @@ and commit the moved submodule.
 
 | Where | What |
 | --- | --- |
-| `src/app/` | Screens (Expo Router): calendar, item details, My day (`today.tsx`), Plan calendar (`plan.tsx`), Vacations (`vacations.tsx`, the form in `vacation.tsx`), settings |
+| `src/app/` | Screens (Expo Router). Tabs in `(tabs)/`: Calendar, Planning, Tasks, Settings. Stacked over them: item details, My day (`today.tsx`), Plan calendar (`plan.tsx`), Vacations (`vacations.tsx`, `vacation.tsx`), goal and task editors (`horizon.tsx`, `task.tsx`) |
+| `src/planning/` | The planning tree (goal cards, drill-down, task lines) and the forecast badge |
 | `src/env.ts` | Core's `Env` on the phone: its database and Google Calendar through the sign-in — what core's planner, stores and operations run against |
 | `src/ui.tsx` | Shared building blocks: sections, buttons, checkboxes, progress bars, confirmations |
 | `src/calendar/` | Time grid, month grid, the calendar hook (core's `assembleCalendar`) |

@@ -78,9 +78,6 @@ export default function CalendarScreen() {
             <Pressable onPress={() => router.push('/vacations')} hitSlop={8} accessibilityRole="button" accessibilityLabel="Vacations">
               <Text style={styles.gear}>🏖</Text>
             </Pressable>
-            <Pressable onPress={() => router.push('/settings')} hitSlop={12} accessibilityRole="button" accessibilityLabel="Settings">
-              <Text style={[styles.gear, { color: theme.muted }]}>⚙</Text>
-            </Pressable>
           </View>
         </View>
 
@@ -119,7 +116,7 @@ export default function CalendarScreen() {
           </Pressable>
         )}
 
-        <Pressable onPress={() => router.push('/settings')}>
+        <Pressable onPress={() => router.navigate('/settings')}>
           <Text style={[styles.status, { color: status.tone === 'bad' ? theme.danger : theme.muted }]} numberOfLines={1}>
             {status.text}
           </Text>
