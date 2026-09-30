@@ -217,10 +217,28 @@ Read its SHA-1. `keytool` comes with the JDK; the store and key passwords of
 the debug keystore are the well-known `android`:
 
 ```powershell
-keytool -list -v -keystore android\app\debug.keystore -alias androiddebugkey -storepass android -keypass android
+keytool -list -v -keystore android\app\debug.keystore -alias androiddebugkey -storepass android -keypass android 2>$null | Select-String 'SHA1:'
 ```
 
-Copy the **SHA1:** line. Then, in <https://console.cloud.google.com/>, in the
+It prints only the **SHA1:** line; copy it.
+
+> Without the `2>$null | Select-String 'SHA1:'` part, `keytool` also prints
+> two warnings. **Ignore both. Nothing needs changing:**
+>
+> - *The certificate uses the SHA1withRSA signature algorithm which is
+>   considered a security risk.* This is about how the certificate signs
+>   itself (it dates from 2013 and is shared by all React Native projects), not
+>   about the SHA-1 fingerprint Google asks for. That fingerprint is simply a
+>   hash that identifies the certificate. Android and Google accept this
+>   keystore.
+> - *The JKS keystore uses a proprietary format. It is recommended to migrate
+>   to PKCS12.* Don't run the suggested `keytool -importkeystore`.
+>   `android\` is generated: regenerating it (deleting it, or
+>   `npx expo prebuild --clean`) brings back the original file, and the
+>   project's rules say never to edit `android\` by hand. Gradle reads JKS
+>   fine.
+
+Then, in <https://console.cloud.google.com/>, in the
 **same project as the desktop** (the Drive folder belongs to that project):
 
 1. **Google Auth platform → Clients → Create client**

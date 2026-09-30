@@ -77,8 +77,12 @@ debug keystore that the build generates. Read its SHA-1 (`keytool` comes with
 the JDK):
 
 ```powershell
-keytool -list -v -keystore android\app\debug.keystore -alias androiddebugkey -storepass android -keypass android
+keytool -list -v -keystore android\app\debug.keystore -alias androiddebugkey -storepass android -keypass android 2>$null | Select-String 'SHA1:'
 ```
+
+It prints only the `SHA1:` line. The `2>$null` hides two warnings that
+`keytool` otherwise prints; they're explained in the guide, step 4, and don't
+need any action.
 
 Then, in <https://console.cloud.google.com/>, **in the same project as the
 desktop** (the Drive folder belongs to the project): **Google Auth platform →
