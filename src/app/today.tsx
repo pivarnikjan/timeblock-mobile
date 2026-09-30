@@ -1,7 +1,7 @@
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { DateTime } from 'luxon';
 import { useState } from 'react';
-import { ScrollView, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import { busySpans } from '@timeblock/core/calendar/busy';
 import type { Env } from '@timeblock/core/env';
 import { clearDay } from '@timeblock/core/google/writes';
@@ -48,6 +48,7 @@ async function pendingReview(e: Env, today: string): Promise<PendingReview | nul
 export default function TodayScreen() {
   const theme = useTheme();
   const app = useApp();
+  const router = useRouter();
   const params = useLocalSearchParams<{ date?: string }>();
   const [pending, setPending] = useState<string | null>(null);
   const [message, setMessage] = useState<{ text: string; tone: 'good' | 'bad' } | null>(null);
@@ -133,17 +134,21 @@ export default function TodayScreen() {
         <Section title="Before you block out the day" tone="accent">
           {outstanding.map((step) => (
             <View key={step.kind} style={ui.inline}>
-              <View style={{ flex: 1 }}>
-                <Body>{step.label}</Body>
-                <Note>{step.period} · on the Planning screens</Note>
-              </View>
+              <Pressable
+                style={{ flex: 1 }}
+                onPress={() => router.navigate({ pathname: '/planning', params: { level: step.place, date: day.date } })}
+                accessibilityRole="link"
+              >
+                <Text style={[ui.text, { color: theme.accent, textDecorationLine: 'underline' }]}>{step.label}</Text>
+                <Note>{step.period}</Note>
+              </Pressable>
               <Button label="Reviewed" onPress={() => act(`ritual-${step.kind}`, () => completeRitual(env().db, step.kind, step.period))} />
             </View>
           ))}
         </Section>
       )}
 
-      <GoalLadder day={day} />
+      <GoalLadder day={day} onOpenWeek={() => router.navigate({ pathname: '/planning', params: { level: 'week', date: day.date } })} />
 
       <Section>
         <Button
@@ -255,11 +260,15 @@ function ReviewYesterday({ review, zone, onSave, busy }: { review: PendingReview
 }
 
 /** This week's priorities, each with the chain it rolls up through and a bar per level. */
-function GoalLadder({ day }: { day: DayView }) {
+function GoalLadder({ day, onOpenWeek }: { day: DayView; onOpenWeek(): void }) {
   const { ctx } = day;
   const weeks = ctx.horizons.filter((h) => h.level === 'week' && h.status === 'active' && h.periodStart <= day.date && h.periodEnd >= day.date);
   if (weeks.length === 0) {
-    return <Note>No priorities set for this week yet — choose them on the Week screen, so today&apos;s work rolls up to something.</Note>;
+    return (
+      <Pressable onPress={onOpenWeek} accessibilityRole="link">
+        <Note>No priorities set for this week yet — tap to choose them (Planning → Week), so today&apos;s work rolls up to something.</Note>
+      </Pressable>
+    );
   }
   const label = (level: string, start: string) =>
     level === 'week' ? weekOfMonth(start).label.split(' (')[0] : level === 'month' ? DateTime.fromISO(start).toFormat('LLLL') : start.slice(0, 4);
