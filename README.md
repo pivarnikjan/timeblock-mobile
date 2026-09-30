@@ -119,6 +119,13 @@ npx expo lint
 npx expo export --platform android
 ```
 
+**Without EAS**, on this computer: install the Android SDK
+([step-by-step guide](https://github.com/pivarnikjan/timeblock/blob/main/docs/android-sdk.md),
+written for Windows on Arm too), then `npx expo run:android` builds and
+installs a debug build on the connected phone (`--variant release` for one
+that runs on its own). Register the local debug keystore's SHA-1 for Google
+sign-in as in step 3 above — the guide shows how to read it.
+
 **In a browser**, for a quick look at the screens: `npm run web`, open
 <http://localhost:8081>, then **⚙ → Load a demo plan** (there is no Google
 sign-in in a browser). It runs the same code on a browser SQLite.
