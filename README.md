@@ -119,12 +119,81 @@ npx expo lint
 npx expo export --platform android
 ```
 
-**Without EAS**, on this computer: install the Android SDK
-([step-by-step guide](https://github.com/pivarnikjan/timeblock/blob/main/docs/android-sdk.md),
-written for Windows on Arm too), then `npx expo run:android` builds and
-installs a debug build on the connected phone (`--variant release` for one
-that runs on its own). Register the local debug keystore's SHA-1 for Google
-sign-in as in step 3 above — the guide shows how to read it.
+**Without EAS**, on this computer: **[docs/deploy-android.md](docs/deploy-android.md)**
+covers it step by step, from installing the toolchain to signing in on the phone.
+The project must sit at a **short path** (40 characters or fewer, such as
+`C:\dev\timeblock-mobile`): the native build fails on Windows' path limit
+otherwise. In short:
+
+```powershell
+.\scripts\deploy.ps1 -Install
+```
+
+installs Java 17 and the Android SDK once. It asks you to accept Google's
+licences. Then open a new terminal, connect the phone (`adb pair` / `adb
+connect` over Wi-Fi, or USB), and run:
+
+```powershell
+.\scripts\deploy.ps1 -Release
+```
+
+This builds the app and installs it on the phone. Without `-Release` you get a
+debug build that loads its JavaScript from the dev server. Register the local
+debug keystore's SHA-1 with Google, as in step 3 above; the guide shows how to
+read it.
+
+### The motorola edge 70 fusion
+
+This is the phone the app is deployed to. It reports **Android 16 (API 36)**,
+the version the app compiles against, on a Snapdragon SM7635 with a 64-bit
+Arm CPU only (`arm64-v8a`). Tested with build `W2WES36.56-98-2-3`.
+Motorola's Android keeps Google's menus, so the guide's steps apply as
+written. For this phone:
+
+**1. Developer options (once).** **Settings → About phone** → scroll to
+**Build number** and tap it seven times, entering the phone's PIN when asked,
+until it says *You are now a developer*. Then **Settings → System → Developer
+options** → turn on **USB debugging**.
+
+**2. Connect it.** Over USB:
+
+- Plug it in and unlock the phone. It shows *Allow USB debugging?* with the
+  computer's key fingerprint. Tick **Always allow from this computer** →
+  **Allow**. If the prompt doesn't appear, pull down the notification shade,
+  tap the USB notification, and choose **File transfer**.
+- **No Motorola driver is needed**, on Windows on Arm too. How Windows sees
+  it in **Device Manager**:
+
+  | USB debugging | Device Manager | USB ID | `adb devices` |
+  | --- | --- | --- | --- |
+  | off | **Portable Devices** → *motorola edge 70 fusion* | `VID_22B8&PID_2E82` | empty |
+  | on | **Universal Serial Bus devices** → *motorola edge 70 fusion*, driver *WinUsb Device* (Microsoft's, built in) | `VID_22B8&PID_2E81` | the phone's serial, `device` |
+
+  `adb devices -l` names it `model:motorola_edge_70_fusion device:marvel`.
+
+Over Wi-Fi, as an alternative to the cable: **Settings → System → Developer options →
+Wireless debugging** → on → **Pair device with pairing code**, then run
+`adb pair <address>` and `adb connect <IP address & Port>` as in the guide's
+step 2. The connect port changes after a restart or after turning Wireless
+debugging off and on. Run `adb connect` again when it does.
+
+**3. Check, then deploy** from the project at its short path:
+
+```powershell
+adb devices
+```
+
+The phone should be listed by its serial number as `device`. Then:
+
+```powershell
+.\scripts\deploy.ps1 -Release
+```
+
+The script prints the phone it found, such as `Phone: motorola edge 70 fusion
+(<serial>, arm64-v8a)`. It compiles the release build for that CPU type only,
+about a quarter of the native work of all four types. The APK therefore runs
+on 64-bit Arm phones like this one; use the EAS build for others. Installing
+through `adb` needs no *install unknown apps* permission on the phone.
 
 **In a browser**, for a quick look at the screens: `npm run web`, open
 <http://localhost:8081>, then **⚙ → Load a demo plan** (there is no Google
@@ -148,7 +217,8 @@ and commit the moved submodule.
 | `src/db/` | Database open/migrate (`database.ts`), reads, writes, the Google cache |
 | `src/google/` | Sign-in, Calendar API |
 | `src/sync/` | Sync with the desktop (core's `syncWithDrive`) |
-| `scripts/` | Browser preview; a fix for expo-sqlite's web build |
+| `scripts/` | Local Android build and install (`deploy.ps1`); browser preview; a fix for expo-sqlite's web build |
+| `docs/` | [Deploying to your phone](docs/deploy-android.md) |
 
 ## License
 
