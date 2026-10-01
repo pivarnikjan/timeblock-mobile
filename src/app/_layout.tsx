@@ -48,6 +48,7 @@ export default function RootLayout() {
         <Stack.Screen name="vacation" options={{ presentation: 'modal', title: 'Set vacation' }} />
         <Stack.Screen name="horizon" options={{ presentation: 'modal', title: 'Goal' }} />
         <Stack.Screen name="task" options={{ presentation: 'modal', title: 'Task' }} />
+        <Stack.Screen name="category" options={{ presentation: 'modal', title: 'Category' }} />
       </Stack>
     </AppProvider>
   );

@@ -6,19 +6,21 @@ import { parseView } from '@timeblock/core/calendar/views';
 import { deleteBlock, moveBlockTo, tick, unpinBlock } from '@timeblock/core/operations/plan';
 import { vacationConflicts, type Conflict, type ConflictTarget } from '@timeblock/core/calendar/vacation-conflicts';
 import { deleteDuringVacation, deleteGoogleEvent, removeVacation } from '@timeblock/core/operations/vacation';
+import { chooseEventCategory, editEventTime } from '@timeblock/core/operations/events';
 import { getSettings } from '@timeblock/core/store/settings';
 import { getVacation } from '@timeblock/core/store/vacations';
 import { formInputs } from '@timeblock/core/vacation';
 import { setMark } from '@timeblock/core/store/event-marks';
-import { useCalendar } from '@/calendar/use-calendar';
+import { invalidateGoogleReads, useCalendar } from '@/calendar/use-calendar';
 import { forgetEvent } from '@/db/cache';
+import { listCategories } from '@/db/queries';
 import { hideEvent, showEvent } from '@/db/mutations';
 import { env } from '@/env';
 import { minutesLabel } from '@/format';
-import { pickDayAndTime, PICKERS_AVAILABLE } from '@/pickers';
+import { pickDayAndTime, pickTime, PICKERS_AVAILABLE } from '@/pickers';
 import { useApp } from '@/state/app';
 import { useTheme, type Theme } from '@/theme';
-import { Button, Checkbox, confirm, Note, plural } from '@/ui';
+import { askRepeatScope, Button, Checkbox, Choice, confirm, Note, plural } from '@/ui';
 import { useLoad } from '@/use-load';
 
 /** One calendar item in full: a block's work to tick off, an event's marks, a vacation's span. */
@@ -192,6 +194,9 @@ function EventDetails({ item, theme }: { item: CalendarItem; theme: Theme }) {
         {item.recurring ? ' · repeats' : ''}
         {item.declined ? ' · declined' : !item.busy ? ' · free' : ''}
       </Text>
+
+      <EventCategory item={item} theme={theme} />
+      {item.writable && !item.allDay && <EventTime item={item} />}
 
       <Row
         theme={theme}
@@ -411,6 +416,91 @@ function VacationDetails({ item, theme }: { item: CalendarItem; theme: Theme }) 
       <Button label="Edit dates, windows or note" onPress={() => router.push({ pathname: '/vacation', params: { id: String(v.id) } })} />
       <Button label="Delete vacation" danger busy={busy === 'delete'} disabled={busy !== null} onPress={remove} />
       <Note>After a change, run Reschedule… (Plan) to move work planned into it.</Note>
+    </View>
+  );
+}
+
+/**
+ * The event's category: by its title words, one chosen by hand (on the series,
+ * so every repeat follows), or none. Its colour follows here and in Google.
+ */
+function EventCategory({ item, theme }: { item: CalendarItem; theme: Theme }) {
+  const { changed } = useApp();
+  const [warning, setWarning] = useState<string | null>(null);
+  const categories = listCategories();
+  const value = item.categorySource === 'chosen' ? (item.category ? String(item.category.id) : 'none') : 'rules';
+  const choose = async (choice: string) => {
+    setWarning(await chooseEventCategory(env(), item.hideKey!, item.title, choice === 'none' || choice === 'rules' ? choice : Number(choice)));
+    changed();
+  };
+  return (
+    <View style={{ gap: 6 }}>
+      <Text style={[styles.heading, { color: theme.foreground }]}>Category</Text>
+      <Choice
+        value={value}
+        title="Category"
+        onChange={(choice) => void choose(choice)}
+        options={[
+          { value: 'rules', label: `By title words${item.categorySource === 'rule' && item.category ? ` (${item.category.name})` : ' (none matches)'}` },
+          ...categories.map((c) => ({ value: String(c.id), label: c.name })),
+          { value: 'none', label: 'No category' },
+        ]}
+      />
+      <Note>
+        Its colour follows the category, here and in Google Calendar{item.recurring ? ' — for every repeat' : ''}. Categories are set up in Settings.
+      </Note>
+      {warning && <Note tone="warn">{warning}</Note>}
+    </View>
+  );
+}
+
+/**
+ * Moves the event: a new day and start (one picker after the other), then its
+ * end. A repeating event asks whether only this occurrence moves, or this and
+ * every following one.
+ */
+function EventTime({ item }: { item: CalendarItem }) {
+  const { changed } = useApp();
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  const edit = async () => {
+    const start = await pickDayAndTime({ date: item.start.toISODate()!, time: item.start.toFormat('HH:mm') });
+    if (!start) return;
+    const length = item.end.diff(item.start, 'minutes').minutes;
+    const proposedEnd = item.start.set({ hour: Number(start.time.slice(0, 2)), minute: Number(start.time.slice(3, 5)) }).plus({ minutes: length });
+    const endTime = await pickTime(proposedEnd.toFormat('HH:mm'), { minuteInterval: 5 });
+    if (!endTime) return;
+    const scope = item.recurring ? await askRepeatScope(item.title) : 'this';
+    if (!scope) return;
+    setBusy(true);
+    setProblem(null);
+    try {
+      await editEventTime(env(), {
+        calendarId: item.calendarId!,
+        eventId: item.eventId!,
+        seriesId: item.seriesId!,
+        date: start.date,
+        startTime: start.time,
+        endTime,
+        scope,
+      });
+      invalidateGoogleReads();
+      changed();
+      router.back();
+    } catch (error) {
+      setProblem((error as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <View style={{ gap: 6 }}>
+      {PICKERS_AVAILABLE && <Button label="Edit time…" busy={busy} onPress={edit} />}
+      <Note>Changed in Google Calendar. Run Reschedule… (Plan) afterwards if planned work is in the way.</Note>
+      {problem && <Note tone="bad">{problem}</Note>}
     </View>
   );
 }

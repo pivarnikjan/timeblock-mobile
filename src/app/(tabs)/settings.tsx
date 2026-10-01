@@ -1,10 +1,13 @@
+import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { formatMinutes } from '@timeblock/core/hierarchy';
 import { updateSettings } from '@timeblock/core/store/settings';
 import { cachedCalendars } from '@/db/cache';
 import { setCalendarHidden, showEvent, updateFilters } from '@/db/mutations';
-import { getFilters, getSettings, listWindows } from '@/db/queries';
+import { getFilters, getSettings, listCategories, listWindows } from '@/db/queries';
+import { syncCategoryColors } from '@timeblock/core/google/category-colors';
+import { categoryWords } from '@timeblock/core/calendar/categories';
 import { loadDemoPlan } from '@/dev/demo';
 import { ago } from '@/format';
 import { SIGN_IN_AVAILABLE } from '@/google/auth';
@@ -23,6 +26,9 @@ export default function SettingsScreen() {
   const filters = useMemo(() => getFilters(), [app.version]); // eslint-disable-line react-hooks/exhaustive-deps
   const settings = useMemo(() => getSettings(), [app.version]); // eslint-disable-line react-hooks/exhaustive-deps
   const windows = useMemo(() => listWindows(), [app.version]); // eslint-disable-line react-hooks/exhaustive-deps
+  const categories = useMemo(() => listCategories(), [app.version]); // eslint-disable-line react-hooks/exhaustive-deps
+  const router = useRouter();
+  const [repaint, setRepaint] = useState<string | null>(null);
   const calendars = useMemo(() => cachedCalendars().filter((c) => c.id !== settings.targetCalendarId), [app.version, settings]); // eslint-disable-line react-hooks/exhaustive-deps
   const colors = windowColors(windows);
   const [name, setName] = useState(device.name);
@@ -184,6 +190,47 @@ export default function SettingsScreen() {
             }}
           />
         )}
+      </Section>
+
+      <Section title="Categories">
+        <Note>
+          For events that are not TimeBlock work — a client meeting, travelling. An event whose title contains one of a category&apos;s words takes its
+          colour (here, on the desktop and in Google); in an event&apos;s details you can pick one by hand instead.
+        </Note>
+        {categories.map((c) => (
+          <Pressable
+            key={c.id}
+            onPress={() => router.push({ pathname: '/category', params: { id: String(c.id) } })}
+            style={ui.inline}
+            accessibilityRole="button"
+          >
+            <View style={[ui.swatch, { backgroundColor: c.color }]} />
+            <View style={{ flex: 1 }}>
+              <Text style={[ui.text, { color: theme.foreground }]}>{c.name}</Text>
+              <Text style={[ui.note, { color: theme.muted }]} numberOfLines={1}>
+                {categoryWords(c.keywords).length > 0 ? c.keywords.split(/[\n,]/).map((w) => w.trim()).filter(Boolean).join(', ') : 'picked by hand only'}
+              </Text>
+            </View>
+            <Text style={[ui.note, { color: theme.accent }]}>Edit</Text>
+          </Pressable>
+        ))}
+        <Button label="Add a category" onPress={async () => router.push('/category')} />
+        {categories.length > 0 && app.account?.calendar && (
+          <Button
+            label="Apply category colours in Google Calendar"
+            onPress={() =>
+              act(async () => {
+                const r = await syncCategoryColors(env());
+                setRepaint(
+                  r.recoloured === 0 && r.cleared === 0
+                    ? 'Every categorised event in Google already has its colour.'
+                    : `${r.recoloured} recoloured${r.cleared > 0 ? `, ${r.cleared} back to their own colour` : ''}.${r.chosenByHand > 0 ? ` ${r.chosenByHand} kept a colour chosen in Google.` : ''}${r.failed > 0 ? ` ${r.failed} could not be changed.` : ''}`,
+                );
+              })
+            }
+          />
+        )}
+        {repaint && <Note tone="good">{repaint}</Note>}
       </Section>
 
       <Section title="Day shape">

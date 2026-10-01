@@ -4,9 +4,33 @@ import { assembleCalendar, type CalendarLayout } from '@timeblock/core/calendar/
 import { calendarRange, type CalendarView } from '@timeblock/core/calendar/views';
 import { nowIn } from '@timeblock/core/time/periods';
 import { cachedCalendars, cachedEvents, pruneEventCache, saveCalendars, saveEvents } from '@/db/cache';
-import { blocksForRange, getFilters, getSettings, listMarks, listWindows, vacationsBetween, vacationsBySourceEvent } from '@/db/queries';
+import { blocksForRange, getFilters, getSettings, listCategories, listMarks, listWindows, vacationsBetween, vacationsBySourceEvent } from '@/db/queries';
 import { fetchCalendars, fetchEvents, withToken } from '@/google/calendar';
 import { useApp } from '@/state/app';
+
+const googleListeners = new Set<() => void>();
+let googleEpoch = 0;
+
+/**
+ * After changing an event in Google (its time, say), every calendar view reads
+ * Google again instead of showing its offline copy.
+ */
+export function invalidateGoogleReads(): void {
+  googleEpoch += 1;
+  for (const listener of googleListeners) listener();
+}
+
+function useGoogleEpoch(): number {
+  const [epoch, setEpoch] = useState(googleEpoch);
+  useEffect(() => {
+    const listener = () => setEpoch(googleEpoch);
+    googleListeners.add(listener);
+    return () => {
+      googleListeners.delete(listener);
+    };
+  }, []);
+  return epoch;
+}
 
 /** The current time in `zone`, moving on every minute (for the now line). */
 export function useNow(zone: string): DateTime {
@@ -45,11 +69,12 @@ export function useCalendar(view: CalendarView, anchor: string): CalendarState {
   /** The range Google was last read for (successfully or not). */
   const [readKey, setReadKey] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const epoch = useGoogleEpoch();
 
   const first = range.days[0];
   const last = range.days[range.days.length - 1];
   const afterLast = DateTime.fromISO(last, { zone }).plus({ days: 1 }).toISODate()!;
-  const key = `${first}/${afterLast}/${zone}`;
+  const key = `${first}/${afterLast}/${zone}/${epoch}`;
   const signedIn = account?.complete === true;
 
   /** Reads the range's events from Google into the offline copy; resolves to the problem, if any. */
@@ -66,7 +91,7 @@ export function useCalendar(view: CalendarView, anchor: string): CalendarState {
     } catch (error) {
       return /network|fetch|resolve host/i.test((error as Error).message) ? 'Offline' : (error as Error).message;
     }
-  }, [signedIn, range, first, afterLast, zone]);
+  }, [signedIn, range, first, afterLast, zone, epoch]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const settle = useCallback(
     (outcome: string | null) => {
@@ -104,6 +129,7 @@ export function useCalendar(view: CalendarView, anchor: string): CalendarState {
       marks: listMarks(),
       vacations: vacationsBetween(rangeStart, rangeEnd),
       converted: vacationsBySourceEvent(),
+      categories: listCategories(),
     });
   }, [range, zone, now, settings, first, last, afterLast, version, eventsVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 

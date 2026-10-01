@@ -2,6 +2,7 @@ import { and, asc, eq, gt, gte, inArray, isNotNull, lt, lte } from 'drizzle-orm'
 import type { BlockWithSegments } from '@timeblock/core/blocks';
 import { parseFilters, type CalendarFilters } from '@timeblock/core/calendar/filters';
 import {
+  eventCategories,
   blocks,
   blockSegments,
   eventMarks,
@@ -10,6 +11,7 @@ import {
   timeWindows,
   vacations,
   type Block,
+  type EventCategory,
   type EventMark,
   type Settings,
   type TimeWindow,
@@ -102,4 +104,9 @@ export function vacationsBetween(from: string, to: string): Vacation[] {
 export function vacationsBySourceEvent(): Map<string, Vacation> {
   const rows = database().orm.select().from(vacations).where(isNotNull(vacations.sourceEvent)).all();
   return new Map(rows.map((v) => [v.sourceEvent!, v]));
+}
+
+/** Event categories in rule order — their colours colour the calendar's events. */
+export function listCategories(): EventCategory[] {
+  return database().orm.select().from(eventCategories).orderBy(asc(eventCategories.sortOrder), asc(eventCategories.id)).all();
 }
