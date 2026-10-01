@@ -37,6 +37,12 @@ server) or `scripts\deploy.ps1 -Release` (JavaScript inside the APK) builds and 
 connected phone through `npx expo run:android`. The project must sit at a path of 40 characters or
 fewer (ninja's 260-character limit). Guide: `docs/deploy-android.md`.
 
+Smart App Control blocks the unsigned `hermesc.exe` (Hermes' bytecode compiler) on this computer.
+`deploy.ps1 -Release` checks whether hermesc runs; if not, it passes Gradle `timeblockPlainJs`, and
+`plugins/with-plain-js-bundle.js` swaps hermesc for `scripts/plain-js-hermesc.*`, which copies the
+bundle unchanged — the APK carries plain JavaScript that Hermes compiles on the phone. Keep Smart
+App Control on; don't try to unblock hermesc.
+
 Builds are signed with the user's own key (`%USERPROFILE%\.timeblock\timeblock-release.p12`, made by
 `scripts\deploy.ps1 -NewKey`), not React Native's shared debug key: `plugins/with-own-signing-key.js`
 adds the signing config to the generated `build.gradle`, and `deploy.ps1` passes the key as Gradle
@@ -68,4 +74,5 @@ the debug key — an app installed with one key can't be updated by a build sign
   `env()` in `src/env.ts`. Never reimplement them here. Anything that plans,
   reschedules or commits calls `syncFirst()` from `useApp()` first, and stops if it throws.
 - Checks before declaring work done: `npx tsc --noEmit`, `npx expo lint`, and
-  `npx expo export --platform android` (bundles without the Android SDK).
+  `npx expo export --platform android --no-bytecode` (bundles without the Android SDK;
+  `--no-bytecode` because Windows blocks hermesc).

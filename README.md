@@ -226,7 +226,7 @@ npx expo lint
 ```
 
 ```bash
-npx expo export --platform android
+npx expo export --platform android --no-bytecode
 ```
 
 **In a browser**, for a quick look at the screens: `npm run web`, open

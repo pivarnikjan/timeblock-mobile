@@ -290,6 +290,20 @@ function Install-Everything {
   Write-Host "  scripts\deploy.ps1 -Release" -ForegroundColor Green
 }
 
+# Whether Windows runs hermesc, the Hermes bytecode compiler a release build uses. Smart App Control
+# blocks it (the npm package's hermesc.exe is unsigned); the release build then ships plain
+# JavaScript instead (plugins\with-plain-js-bundle.js).
+function Test-Hermesc {
+  $hermesc = Join-Path $root 'node_modules\hermes-compiler\hermesc\win64-bin\hermesc.exe'
+  if (-not (Test-Path $hermesc)) { return $false }
+  try {
+    $null = & $hermesc -version 2>&1
+    return $LASTEXITCODE -eq 0
+  } catch {
+    return $false
+  }
+}
+
 function Deploy {
   Step 'Checking the toolchain'
   $missing = @()
@@ -319,11 +333,12 @@ function Deploy {
     $abi = (adb -s $serial shell getprop ro.product.cpu.abi).Trim()
     Write-Host "Phone: $model ($serial, $abi)"
 
-    # An android\ folder generated before plugins\with-own-signing-key.js existed would still sign with
-    # the debug key; prebuild (without --clean) re-applies the config plugins to it.
+    # An android\ folder generated before plugins\with-own-signing-key.js or with-plain-js-bundle.js
+    # existed lacks their setup; prebuild (without --clean) re-applies the config plugins to it.
     $gradleFile = 'android\app\build.gradle'
-    if ((Test-Path $gradleFile) -and -not (Select-String -Path $gradleFile -Pattern '@generated timeblock-signing' -Quiet)) {
-      Step 'Applying the signing setup to android\'
+    $markers = '@generated timeblock-signing', '@generated timeblock-plain-js'
+    if ((Test-Path $gradleFile) -and ($markers | Where-Object { -not (Select-String -Path $gradleFile -Pattern $_ -SimpleMatch -Quiet) })) {
+      Step 'Applying the signing and bundle setup to android\'
       npx expo prebuild --platform android --no-install
       if ($LASTEXITCODE -ne 0) { throw 'expo prebuild failed.' }
     }
@@ -339,6 +354,12 @@ function Deploy {
     # project properties for this run only.
     $env:ORG_GRADLE_PROJECT_timeblockKeystore = $keystore
     $env:ORG_GRADLE_PROJECT_timeblockKeystorePassword = $keyPassword
+    # A release build compiles its JavaScript to Hermes bytecode with hermesc - unless Windows blocks
+    # it; then the APK carries the JavaScript itself, and Hermes compiles it on the phone.
+    if ($Release -and -not (Test-Hermesc)) {
+      Write-Host 'Windows blocks hermesc.exe (Smart App Control?): the release build ships plain JavaScript instead of bytecode.' -ForegroundColor Yellow
+      $env:ORG_GRADLE_PROJECT_timeblockPlainJs = 'true'
+    }
     # A release build carries its JavaScript inside the APK, so it needs no dev server.
     $runArgs = @('expo', 'run:android', '--variant', $variant)
     if ($Release) { $runArgs += '--no-bundler' }
@@ -351,7 +372,7 @@ function Deploy {
       }
     } finally {
       $env:ORG_GRADLE_PROJECT_reactNativeArchitectures = $previousArchs
-      Remove-Item Env:ORG_GRADLE_PROJECT_timeblockKeystore, Env:ORG_GRADLE_PROJECT_timeblockKeystorePassword -ErrorAction SilentlyContinue
+      Remove-Item Env:ORG_GRADLE_PROJECT_timeblockKeystore, Env:ORG_GRADLE_PROJECT_timeblockKeystorePassword, Env:ORG_GRADLE_PROJECT_timeblockPlainJs -ErrorAction SilentlyContinue
     }
   } finally { Pop-Location }
 }

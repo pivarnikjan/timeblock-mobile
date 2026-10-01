@@ -27,6 +27,7 @@
       "expo-status-bar",
       "expo-sqlite",
       "./plugins/with-own-signing-key",
+      "./plugins/with-plain-js-bundle",
       "@react-native-community/datetimepicker"
     ],
     "experiments": {
