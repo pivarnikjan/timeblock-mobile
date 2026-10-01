@@ -228,6 +228,13 @@ the phone, then runs `npx expo run:android --variant release`, which:
 2. compiles it with Gradle,
 3. installs the APK on the phone and opens the app.
 
+A release build normally turns the JavaScript into Hermes bytecode with
+`hermesc.exe`. Windows' **Smart App Control** blocks that file, as it is
+unsigned. The script checks, and if it is blocked it says so in yellow and
+builds with the JavaScript as it is: Hermes on the phone compiles it when the
+app starts, which takes a moment longer, but the app is the same. Nothing
+needs to change in Windows.
+
 The script compiles the release build only for the connected phone's CPU type
 (`arm64-v8a` on most phones), not all four Android ones. That makes the build
 about four times quicker, but the APK is then for that phone. The **first
@@ -357,6 +364,7 @@ with an APK built with a different key. To replace it:
 | `This folder's path is … characters long` | The project is at a long path. | Move it to `C:\dev\timeblock-mobile` (*Before you start*). |
 | `ninja: error: manifest 'build.ninja' still dirty after 100 tries`, or another CMake / ninja error about a missing file | A path inside the build is over 260 characters, so ninja can't see the file. The *long paths* setting doesn't help ninja 1.10. | Move the project to a short path, then delete `android\` and the `.cxx` folders (*Before you start*). |
 | A native build step fails on Windows on Arm | An x64 SDK tool didn't run under emulation. | Run the build again; the first runs under emulation are the slowest. If it fails at the same step again, note which one. |
+| `hermesc.exe … An Application Control policy has blocked this file` | Smart App Control blocks the unsigned Hermes compiler, and the build ran without `deploy.ps1` (e.g. `gradlew assembleRelease` or `npx expo export`). | Build with `.\scripts\deploy.ps1 -Release`, which ships plain JavaScript then. With Gradle directly, add `-PtimeblockPlainJs=true`; with `expo export`, add `--no-bytecode`. |
 | `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | The installed copy has a different signing key. | See *When Android refuses to update the app*. |
 | Debug build: red screen *Unable to load script* | The phone can't reach the dev server. | Keep the `deploy.ps1` terminal open. Allow Node.js through the Windows firewall on private networks. Put the phone and computer on the same Wi-Fi. |
 | Sign-in fails with `DEVELOPER_ERROR` (code 10) | Google doesn't know this package + SHA-1 pair. | Step 4, with the SHA-1 from `.\scripts\deploy.ps1 -Sha1`. Wait a few minutes after creating the client. |

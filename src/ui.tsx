@@ -298,6 +298,28 @@ ${message}`));
   );
 }
 
+/**
+ * Asks how far a change to a repeating event reaches: this occurrence, this and
+ * every following one, or nothing (cancelled → null).
+ */
+export function askRepeatScope(title: string): Promise<'this' | 'following' | null> {
+  if (Platform.OS === 'web') {
+    if (!window.confirm(`${title}
+
+OK: this and all following events. Cancel: choose again.`)) {
+      return Promise.resolve(window.confirm('Change only this event?') ? 'this' : null);
+    }
+    return Promise.resolve('following');
+  }
+  return new Promise((resolve) =>
+    Alert.alert(title, 'It repeats. Change only this event, or this one and every following one?', [
+      { text: 'Cancel', style: 'cancel', onPress: () => resolve(null) },
+      { text: 'This event', onPress: () => resolve('this') },
+      { text: 'This and following', onPress: () => resolve('following') },
+    ], { cancelable: true, onDismiss: () => resolve(null) }),
+  );
+}
+
 export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 export type { Theme };

@@ -15,7 +15,10 @@ plan on the calendar, offline, in step with the desktop.
 - **Blocks** — tick work off, **Move…** (pinned there, its Google event
   follows), unpin, delete; progress and task status follow the desktop's rules.
 - **Events** — important (★ in Month), placeholder (planning may use the
-  time), hide; hide whole calendars; delete from Google Calendar.
+  time), hide; hide whole calendars; delete from Google Calendar; a
+  **category** (by title words, picked by hand, or none) whose colour the
+  event takes here and in Google; **Edit time…** — for a repeating event,
+  this one or this and all following ones.
 - **Planning** (tab) — the Year, Month and Week screens: goals, outcomes and
   priorities with progress and forecast, drilled down to their tasks; add,
   edit, mark done or drop them; move month backlog into a week; quick-add
@@ -27,7 +30,8 @@ plan on the calendar, offline, in step with the desktop.
   optionally shown in Google Calendar); see what is scheduled during it and
   delete what you pick; answer "is it a vacation?" for multi-day events, and
   move a vacation with its event when that moved in Google.
-- **Settings** (tab) — Google sign-in, sync with the desktop, the hours the
+- **Settings** (tab) — event **categories** (name, colour, title words;
+  apply their colours in Google), Google sign-in, sync with the desktop, the hours the
   calendar shows, time windows in front, only multi-day events in Month, which
   calendars and hidden events are shown; the day shape and time windows the
   planner uses, read-only (they are edited on the desktop).
@@ -222,7 +226,7 @@ npx expo lint
 ```
 
 ```bash
-npx expo export --platform android
+npx expo export --platform android --no-bytecode
 ```
 
 **In a browser**, for a quick look at the screens: `npm run web`, open
